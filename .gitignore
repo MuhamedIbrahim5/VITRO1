@@ -3,4 +3,4 @@ downloads/
 *.log
 .env
 .DS_Store
-cookies.txt
+# cookies.txt
