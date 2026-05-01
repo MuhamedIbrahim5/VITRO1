@@ -24,6 +24,20 @@ const activeDownloads = new Map();
 const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
 fs.mkdir(DOWNLOADS_DIR, { recursive: true }).catch(console.error);
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 // SSE endpoint for real-time progress
 app.get('/api/progress/:downloadId', (req, res) => {
     const { downloadId } = req.params;
