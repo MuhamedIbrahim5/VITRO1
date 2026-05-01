@@ -1,0 +1,8 @@
+node_modules
+downloads
+.git
+.vscode
+.firebase
+ffmpeg-8.0.1-essentials_build
+*.md
+.gitignore

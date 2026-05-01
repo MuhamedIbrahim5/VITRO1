@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Media Video Downloader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Cairo:wght@400;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head> ى
+
+<body>
+    <!-- Header -->
+    <header class="site-header">
+        <div class="header-container">
+            <!-- Logo -->
+            <div class="site-logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="32" height="32" rx="6" fill="#10b981" />
+                    <path d="M16 8L16 20M16 20L11 15M16 20L21 15" stroke="white" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M10 24L22 24" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+                </svg>
+                <div class="logo-text">
+                    <span class="logo-vitro">VITRO</span><span class="logo-apps">APPS</span>
+                </div>
+            </div>
+
+            <!-- Header Actions -->
+            <div class="header-actions">
+                <!-- Rating Bar -->
+                <div class="rating-bar-header">
+                    <div class="rating-content-header">
+                        <div class="stars">
+                            <span class="star-icon">⭐</span>
+                            <span class="star-icon">⭐</span>
+                            <span class="star-icon">⭐</span>
+                            <span class="star-icon">⭐</span>
+                            <span class="star-icon">⭐</span>
+                        </div>
+                        <span class="rating-score">5.0</span>
+                        <span class="rating-reviews" data-en="(100M reviews)" data-ar="(100M تقييم)">(100M reviews)</span>
+                        <button class="write-review-btn">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <path d="M11 2L14 5L5 14H2V11L11 2Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Language Switcher -->
+                <div class="language-switcher">
+                    <button id="langBtn" class="lang-btn">
+                        <span id="langFlag">🇺🇸</span>
+                        <span id="langText">English</span>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                    <div id="langMenu" class="lang-menu hidden">
+                        <button class="lang-option active" data-lang="en" data-flag="🇺🇸">
+                            <div class="lang-option-content">
+                                <span class="lang-flag">🇺🇸</span>
+                                <span class="lang-name">English</span>
+                            </div>
+                            <svg class="checkmark" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <path d="M3 8L6 11L13 4" stroke="#0284c7" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                        <button class="lang-option" data-lang="ar" data-flag="🇪🇬">
+                            <div class="lang-option-content">
+                                <span class="lang-flag">🇪🇬</span>
+                                <span class="lang-name">العربية</span>
+                            </div>
+                            <svg class="checkmark hidden" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <path d="M3 8L6 11L13 4" stroke="#0284c7" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Header Section -->
+    <div class="hero-header">
+        <div class="hero-content">
+            <h1 class="hero-title" data-en="Social Media Video Downloader" data-ar="أداة تحميل فيديوهات السوشيال ميديا">
+                Social Media Video Downloader</h1>
+            <p class="hero-subtitle" data-en="All your favorite videos in one place"
+                data-ar="جميع فيديوهاتك المفضلة في مكان واحد">All your favorite videos in one place</p>
+            <p class="hero-description" data-en="Safe, trusted downloads with no watermarks"
+                data-ar="تحميلات آمنة وموثوقة بدون علامات مائية">Safe, trusted downloads with no watermarks</p>
+
+            <!-- Download Tool in Hero -->
+            <div class="hero-download-tool"></div>
+            <div class="input-wrapper">
+                <input type="text" id="videoUrl" class="url-input"
+                    data-placeholder-en="Paste TikTok, Instagram, YouTube or Facebook link here"
+                    data-placeholder-ar="الصق رابط TikTok أو Instagram أو YouTube أو Facebook هنا"
+                    placeholder="Paste TikTok, Instagram, YouTube or Facebook link here" autocomplete="off">
+                <button id="pasteBtn" class="paste-icon-btn" title="Paste">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M8 3C8 2.44772 8.44772 2 9 2H11C11.5523 2 12 2.44772 12 3V4H8V3Z"
+                            fill="currentColor" />
+                        <path
+                            d="M6 4V3C6 1.89543 6.89543 1 8 1H12C13.1046 1 14 1.89543 14 3V4H15C16.1046 4 17 4.89543 17 6V16C17 17.1046 16.1046 18 15 18H5C3.89543 18 3 17.1046 3 16V6C3 4.89543 3.89543 4 5 4H6ZM5 6V16H15V6H5Z"
+                            fill="currentColor" />
+                    </svg>
+                </button>
+                <div id="pasteTooltip" class="paste-tooltip hidden"></div>
+            </div>
+
+            <button id="downloadBtn" class="download-btn" data-en="Download Video" data-ar="تحميل الفيديو">Download
+                Video</button>
+
+            <!-- Popular Platforms -->
+            <div class="platform-buttons">
+                <button class="platform-btn" data-en="TikTok Videos" data-ar="فيديوهات تيك توك">TikTok
+                    Videos</button>
+                <button class="platform-btn" data-en="Instagram Reels" data-ar="ريلز إنستجرام">Instagram
+                    Reels</button>
+                <button class="platform-btn" data-en="YouTube Videos" data-ar="فيديوهات يوتيوب">YouTube
+                    Videos</button>
+                <button class="platform-btn" data-en="Facebook Videos" data-ar="فيديوهات فيسبوك">Facebook
+                    Videos</button>
+                <button class="platform-btn" data-en="YouTube Shorts" data-ar="شورتس يوتيوب">YouTube Shorts</button>
+                <button class="platform-btn" data-en="Instagram Posts" data-ar="منشورات إنستجرام">Instagram
+                    Posts</button>
+            </div>
+
+
+            <!-- Progress and Results in Hero -->
+            <div id="progressContainer" class="progress-container hidden">
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <p id="progressText" class="progress-text" data-en="Analyzing link..." data-ar="جاري تحليل الرابط...">
+                    Analyzing link...</p>
+            </div>
+
+            <div id="statusMessage" class="status-message hidden"></div>
+
+            <div id="resultSection" class="result-section hidden">
+                <p class="success-text" data-en="✓ Video is ready" data-ar="✓ الفيديو جاهز">✓ Video is ready</p>
+                <a id="downloadLink" class="download-link" download data-en="Download without watermark"
+                    data-ar="تحميل بدون علامة مائية">Download without watermark</a>
+            </div>
+        </div>
+    </div>
+
+    <section class="features">
+        <div class="feature-item">
+            <div class="feature-icon">⚡</div>
+            <p class="feature-text" data-en="Fast & Free" data-ar="سريع ومجاني">Fast & Free</p>
+        </div>
+        <div class="feature-item">
+            <div class="feature-icon">✨</div>
+            <p class="feature-text" data-en="No Watermark" data-ar="بدون علامة مائية">No Watermark</p>
+        </div>
+        <div class="feature-item">
+            <div class="feature-icon">🔓</div>
+            <p class="feature-text" data-en="No Registration" data-ar="بدون تسجيل">No Registration</p>
+        </div>
+    </section>
+
+    <section class="how-it-works">
+        <h2 class="section-title" data-en="How It Works" data-ar="كيف يعمل الموقع">How It Works</h2>
+        <div class="steps">
+            <div class="step">
+                <div class="step-number">1</div>
+                <p class="step-text" data-en="Copy a video link from TikTok, Instagram, YouTube or Facebook"
+                    data-ar="انسخ رابط فيديو من TikTok أو Instagram أو YouTube أو Facebook">Copy a video link
+                    from
+                    TikTok, Instagram, YouTube or Facebook</p>
+            </div>
+            <div class="step">
+                <div class="step-number">2</div>
+                <p class="step-text" data-en="Paste it in the box above" data-ar="الصقه في الخانة">Paste it in
+                    the
+                    box above</p>
+            </div>
+            <div class="step">
+                <div class="step-number">3</div>
+                <p class="step-text" data-en="Click Download and get your video instantly"
+                    data-ar="اضغط تحميل واحصل على الفيديو فورًا">Click Download and get your video instantly</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="feedback-section">
+        <h2 class="section-title" data-en="Help Us Improve" data-ar="ساعدنا في التحسين">Help Us Improve</h2>
+        <p class="feedback-subtitle" data-en="Share your feedback to make this tool better"
+            data-ar="شارك رأيك لتحسين الأداة">Share your feedback to make this tool better</p>
+
+        <div class="feedback-form">
+            <div class="rating-input">
+                <label class="rating-label" data-en="Rate your experience:" data-ar="قيم تجربتك:">Rate your experience:</label>
+                <div class="star-rating">
+                    <span class="star-btn" data-rating="1">⭐</span>
+                    <span class="star-btn" data-rating="2">⭐</span>
+                    <span class="star-btn" data-rating="3">⭐</span>
+                    <span class="star-btn" data-rating="4">⭐</span>
+                    <span class="star-btn" data-rating="5">⭐</span>
+                </div>
+            </div>
+
+            <textarea id="feedbackText" class="feedback-textarea"
+                data-placeholder-en="Tell us what you think or suggest improvements..."
+                data-placeholder-ar="أخبرنا برأيك أو اقترح تحسينات..."
+                placeholder="Tell us what you think or suggest improvements..." rows="4"></textarea>
+
+            <button id="submitFeedback" class="feedback-btn" data-en="Submit Review"
+                data-ar="إرسال التقييم">Submit Review</button>
+
+            <div id="feedbackMessage" class="feedback-message hidden"></div>
+        </div>
+    </section>
+
+    <!-- Reviews Section -->
+    <section class="reviews-section">
+        <h2 class="section-title" data-en="User Reviews" data-ar="تقييمات المستخدمين">User Reviews</h2>
+        <div id="reviewsList" class="reviews-list">
+            <!-- Reviews will be added here dynamically -->
+        </div>
+    </section>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
