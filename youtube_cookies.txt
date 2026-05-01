@@ -1,0 +1,11 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.youtube.com	TRUE	/	FALSE	0	PREF	tz=Africa.Cairo&f7=100&f4=4000000
+.youtube.com	TRUE	/	FALSE	0	APISID	V2tYFJ2oM2OC5FDT/AphnP0FUBrXkNtoij
+.youtube.com	TRUE	/	FALSE	0	SAPISID	yE1NLSaiYhP4tWNP/ASnBzQZ_RSRfwbDeh
+.youtube.com	TRUE	/	FALSE	0	__Secure-1PAPISID	yE1NLSaiYhP4tWNP/ASnBzQZ_RSRfwbDeh
+.youtube.com	TRUE	/	FALSE	0	__Secure-3PAPISID	yE1NLSaiYhP4tWNP/ASnBzQZ_RSRfwbDeh
+.youtube.com	TRUE	/	FALSE	0	SID	g.a0009ggggvDr-zGUEl1q8pe6DWu7f2_o4_GSE_k2vbP28fseVoyQc_BwGTbMm5tWV4xlg4wzWwACgYKAeASARcSFQHGX2MitFtCFrOyxzDbfbdKwyLLGhoVAUF8yKrRD-lhJ3m4CggvBNwn-7-80076
+.youtube.com	TRUE	/	FALSE	0	SIDCC	AKEyXzVhA5aKiMkpcxUIQMaaHn50LtAjZZwupCLZhKatp2K1cKA6DOSlbDaEO-lezrxeTTBlwGU
