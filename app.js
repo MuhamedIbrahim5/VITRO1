@@ -318,7 +318,12 @@ function listenToProgressBackground(downloadId) {
                     clearInterval(window.progressInterval);
                     window.progressInterval = null;
                 }
-                updateProgress(data.progress, data.message);
+                // Check if progress data exists
+                if (data.progress !== undefined && data.message) {
+                    updateProgress(data.progress, data.message);
+                } else {
+                    console.log('Progress data incomplete:', data);
+                }
             } else if (data.type === 'complete') {
                 console.log('Download complete!', data);
                 eventSource.close();
