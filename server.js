@@ -142,7 +142,7 @@ async function downloadWithProgress(url, platform, downloadId) {
 
         if (platform === 'youtube') {
             // Download best single file format (no merge needed)
-            args.push('-f', 'best[ext=mp4]/best');
+            args.push('-f', 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
         } else if (platform === 'instagram') {
             const cookiesPath = path.join(__dirname, 'cookies.txt');
             try {
@@ -200,10 +200,26 @@ async function downloadWithProgress(url, platform, downloadId) {
         });
 
         proc.stderr.on('data', (data) => {
-            console.error('yt-dlp error:', data.toString());
+            const errorMsg = data.toString();
+            console.error('yt-dlp error:', errorMsg);
+            
+            // Send specific error messages
+            if (errorMsg.includes('Sign in')) {
+                sendProgress(downloadId, { 
+                    type: 'error', 
+                    message: 'YouTube requires authentication for this video' 
+                });
+            } else if (errorMsg.includes('Video unavailable')) {
+                sendProgress(downloadId, { 
+                    type: 'error', 
+                    message: 'Video is unavailable or private' 
+                });
+            }
         });
 
         proc.on('close', async (code) => {
+            console.log(`yt-dlp process exited with code: ${code}`);
+            
             if (code === 0) {
                 try {
                     await fs.access(outputPath);
@@ -222,10 +238,12 @@ async function downloadWithProgress(url, platform, downloadId) {
                         throw new Error('File is empty');
                     }
                 } catch (error) {
+                    console.error('File check error:', error);
                     sendProgress(downloadId, { type: 'error', message: 'Failed to save video' });
                 }
             } else {
-                sendProgress(downloadId, { type: 'error', message: 'Download failed' });
+                console.error(`Download failed with exit code: ${code}`);
+                sendProgress(downloadId, { type: 'error', message: `Download failed (code: ${code})` });
             }
         });
 
