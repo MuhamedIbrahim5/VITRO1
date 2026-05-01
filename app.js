@@ -310,7 +310,16 @@ function listenToProgressBackground(downloadId) {
             const data = JSON.parse(event.data);
             console.log('Progress event:', data);
             
-            if (data.type === 'complete') {
+            if (data.type === 'connected') {
+                console.log('Connected to progress stream');
+            } else if (data.type === 'progress') {
+                // Stop fake animation and show real progress
+                if (window.progressInterval) {
+                    clearInterval(window.progressInterval);
+                    window.progressInterval = null;
+                }
+                updateProgress(data.progress, data.message);
+            } else if (data.type === 'complete') {
                 console.log('Download complete!', data);
                 eventSource.close();
                 // Stop fake animation
