@@ -141,6 +141,15 @@ async function downloadWithProgress(url, platform, downloadId) {
         let args = ['--newline', '--no-warnings', '--no-playlist'];
 
         if (platform === 'youtube') {
+            // Add YouTube cookies if available
+            const ytCookies = path.join(__dirname, 'youtube_cookies.txt');
+            try {
+                await fs.access(ytCookies);
+                args.push('--cookies', ytCookies);
+                console.log('✓ Using YouTube cookies');
+            } catch {
+                console.log('⚠ No YouTube cookies found, trying without...');
+            }
             // Download best single file format (no merge needed)
             args.push('-f', 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
         } else if (platform === 'instagram') {
