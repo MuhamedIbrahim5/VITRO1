@@ -1,11 +1,21 @@
 # Use Node.js 18 Alpine (lightweight)
 FROM node:18-alpine
 
-# Install Python, pip, and ffmpeg (required for yt-dlp)
-RUN apk add --no-cache python3 py3-pip ffmpeg
+# Install Python, pip, ffmpeg, and other dependencies
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    ffmpeg \
+    && ln -sf python3 /usr/bin/python
 
-# Install yt-dlp
-RUN pip3 install --no-cache-dir yt-dlp
+# Install yt-dlp using pip
+RUN python3 -m pip install --no-cache-dir --break-system-packages yt-dlp
+
+# Verify installations
+RUN node --version && \
+    python3 --version && \
+    yt-dlp --version && \
+    ffmpeg -version
 
 # Set working directory
 WORKDIR /app
@@ -14,7 +24,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install Node.js dependencies
-RUN npm install --production
+RUN npm ci --only=production
 
 # Copy application files
 COPY . .
