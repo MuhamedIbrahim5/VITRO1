@@ -145,13 +145,16 @@ async function downloadWithProgress(url, platform, downloadId) {
             const ytCookies = path.join(__dirname, 'youtube_cookies.txt');
             try {
                 await fs.access(ytCookies);
+                const stats = await fs.stat(ytCookies);
+                console.log(`✓ Found YouTube cookies file (${stats.size} bytes)`);
                 args.push('--cookies', ytCookies);
-                console.log('✓ Using YouTube cookies');
-            } catch {
-                console.log('⚠ No YouTube cookies found, trying without...');
+            } catch (error) {
+                console.log('⚠ No YouTube cookies found:', error.message);
             }
             // Download best single file format (no merge needed)
             args.push('-f', 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
+            // Add user agent to avoid bot detection
+            args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         } else if (platform === 'instagram') {
             const cookiesPath = path.join(__dirname, 'cookies.txt');
             try {
