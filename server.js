@@ -7,7 +7,12 @@ const { spawn } = require('child_process');
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type'],
+    credentials: false
+}));
 app.use(express.json());
 app.use(express.static(__dirname));
 app.use('/downloads', express.static('downloads'));
@@ -227,7 +232,10 @@ function detectPlatform(url) {
 
 // Start server
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, '0.0.0.0', () => {
+const HOST = '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
     console.log(`\n🚀 Server running on port ${PORT}`);
-    console.log(`📡 http://localhost:${PORT}\n`);
+    console.log(`📡 http://${HOST}:${PORT}\n`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
