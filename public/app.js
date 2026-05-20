@@ -115,19 +115,20 @@ if (!localStorage.getItem('preferredLanguage')) {
 
 switchLanguage(savedLang, savedFlag);
 
-// API Base URL - fixed production backend with optional override
-const DEFAULT_PRODUCTION_API_BASE = 'https://vitro1-production-be78.up.railway.app';
+// API Base URL - supports explicit backend override for static hosting
 const normalizeApiBase = (value) => String(value || '').trim().replace(/\/+$/, '');
 const configuredApiBase = normalizeApiBase(
     window.VITRO_API_BASE_URL || localStorage.getItem('VITRO_API_BASE_URL')
 );
-const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const API_BASE_URL = configuredApiBase || (isLocalHost ? 'http://localhost:3001' : DEFAULT_PRODUCTION_API_BASE);
+const API_BASE_URL = configuredApiBase || (
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? 'http://localhost:3001'
+        : window.location.origin
+);
 
 // عناصر الصفحة
 const videoUrlInput = document.getElementById('videoUrl');
 const downloadBtn = document.getElementById('downloadBtn');
-const downloadAudioBtn = document.getElementById('downloadAudioBtn');
 const pasteBtn = document.getElementById('pasteBtn');
 const pasteTooltip = document.getElementById('pasteTooltip');
 const statusMessage = document.getElementById('statusMessage');
@@ -136,7 +137,6 @@ const downloadLink = document.getElementById('downloadLink');
 const progressContainer = document.getElementById('progressContainer');
 const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
-let currentDownloadType = 'video';
 
 // Translations for dynamic messages
 const translations = {
@@ -174,33 +174,12 @@ function t(key) {
     return translations[currentLang][key] || key;
 }
 
-function getVideoButtonLabel() {
-    return downloadBtn?.getAttribute(`data-${currentLang}`) || 'Download Video';
-}
-
-function getAudioButtonLabel() {
-    return downloadAudioBtn?.getAttribute(`data-${currentLang}`) || 'Download MP3';
-}
-
-function resetActionButtons() {
-    downloadBtn.disabled = false;
-    downloadBtn.textContent = getVideoButtonLabel();
-
-    if (downloadAudioBtn) {
-        downloadAudioBtn.disabled = false;
-        downloadAudioBtn.textContent = getAudioButtonLabel();
-    }
-}
-
 // Event handlers
 console.log('Setting up event listeners...');
 console.log('downloadBtn:', downloadBtn);
 console.log('videoUrlInput:', videoUrlInput);
 
-downloadBtn.addEventListener('click', () => handleDownload('video'));
-if (downloadAudioBtn) {
-    downloadAudioBtn.addEventListener('click', () => handleDownload('audio'));
-}
+downloadBtn.addEventListener('click', handleDownload);
 
 // زر اللصق
 pasteBtn.addEventListener('click', async (e) => {
@@ -274,7 +253,7 @@ videoUrlInput.addEventListener('input', () => {
 
 videoUrlInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
-        handleDownload('video');
+        handleDownload();
     }
 });
 
@@ -283,7 +262,7 @@ videoUrlInput.addEventListener('input', () => {
 });
 
 // Main download function
-async function handleDownload(downloadType = 'video') {
+async function handleDownload() {
     console.log('Download button clicked!');
     const url = videoUrlInput.value.trim();
     console.log('URL:', url);
@@ -298,8 +277,7 @@ async function handleDownload(downloadType = 'video') {
         return;
     }
     
-    currentDownloadType = downloadType === 'audio' ? 'audio' : 'video';
-    startProcessing(currentDownloadType);
+    startProcessing();
     console.log('Starting download request...');
     
     try {
@@ -308,7 +286,7 @@ async function handleDownload(downloadType = 'video') {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ url, format: currentDownloadType })
+            body: JSON.stringify({ url })
         });
         
         console.log('Response received:', response.status);
@@ -321,6 +299,11 @@ async function handleDownload(downloadType = 'video') {
         } else {
             const rawText = await response.text();
             console.error('Non-JSON response preview:', rawText.slice(0, 180));
+
+            if (response.status === 404 && API_BASE_URL === window.location.origin) {
+                showError('Backend API is not connected. Ø®Ø¯Ù…Ø© Ø§Ù„ØªØ­Ù…ÙŠÙ„ ØºÙŠØ± Ù…ØªØµÙ„Ø©.');
+                return;
+            }
 
             showError(`Server response is invalid (${response.status})`);
             return;
@@ -335,7 +318,7 @@ async function handleDownload(downloadType = 'video') {
             // Use fast fake progress and listen in background
             listenToProgressBackground(data.downloadId);
         } else {
-            showError(data?.error || t('errorOccurred'));
+            showError(data.error || t('errorOccurred'));
         }
         
     } catch (error) {
@@ -426,22 +409,10 @@ function startFastAnimation() {
 }
 
 // UI state management
-function startProcessing(downloadType = 'video') {
+function startProcessing() {
     downloadBtn.disabled = true;
+    downloadBtn.textContent = t('downloading');
     videoUrlInput.disabled = true;
-
-    if (downloadType === 'audio') {
-        downloadBtn.textContent = getVideoButtonLabel();
-    } else {
-        downloadBtn.textContent = t('downloading');
-    }
-
-    if (downloadAudioBtn) {
-        downloadAudioBtn.disabled = true;
-        downloadAudioBtn.textContent = downloadType === 'audio'
-            ? 'Extracting MP3...'
-            : getAudioButtonLabel();
-    }
     
     resultSection.classList.add('hidden');
     statusMessage.classList.add('hidden');
@@ -452,7 +423,8 @@ function startProcessing(downloadType = 'video') {
 }
 
 function showSuccess(downloadUrl, filename) {
-    resetActionButtons();
+    downloadBtn.disabled = false;
+    downloadBtn.textContent = currentLang === 'en' ? 'Download Video' : 'تحميل الفيديو';
     videoUrlInput.disabled = false;
     
     // Clear progress animation
@@ -463,9 +435,6 @@ function showSuccess(downloadUrl, filename) {
     // Complete progress bar
     progressFill.style.width = '100%';
     progressText.textContent = currentLang === 'ar' ? 'التحميل جاهز!' : 'Download ready!';
-    if (currentDownloadType === 'audio') {
-        progressText.textContent = 'MP3 is ready!';
-    }
     
     setTimeout(() => {
         progressContainer.classList.add('hidden');
@@ -481,16 +450,12 @@ function showSuccess(downloadUrl, filename) {
             downloadLink.download = filename;
         }
         
-        if (currentDownloadType === 'audio') {
-            downloadLink.textContent = getAudioButtonLabel();
-        }
-        
         resultSection.classList.remove('hidden');
         
         // Auto-download the video immediately
         setTimeout(() => {
             downloadLink.click();
-            console.log(`Auto-downloading ${currentDownloadType}...`);
+            console.log('Auto-downloading video...');
         }, 500);
     } else {
         showError(t('errorOccurred'));
@@ -498,7 +463,8 @@ function showSuccess(downloadUrl, filename) {
 }
 
 function showError(message) {
-    resetActionButtons();
+    downloadBtn.disabled = false;
+    downloadBtn.textContent = currentLang === 'en' ? 'Download Video' : 'تحميل الفيديو';
     videoUrlInput.disabled = false;
     
     // Clear progress animation

@@ -37,9 +37,6 @@ const FFMPEG_PATH = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFMPEG_EXE : 'ffmpeg';
 const FFPROBE_PATH = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFPROBE_EXE : 'ffprobe';
 fs.mkdir(DOWNLOADS_DIR, { recursive: true }).catch(console.error);
 
-const DOWNLOAD_TTL_MS = Number(process.env.DOWNLOAD_TTL_MS || 6 * 60 * 60 * 1000);
-const DOWNLOAD_CLEANUP_INTERVAL_MS = Number(process.env.DOWNLOAD_CLEANUP_INTERVAL_MS || 15 * 60 * 1000);
-
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ 
@@ -98,38 +95,10 @@ function sendProgress(downloadId, data) {
     }
 }
 
-async function cleanupOldDownloads() {
-    try {
-        const now = Date.now();
-        const entries = await fs.readdir(DOWNLOADS_DIR, { withFileTypes: true });
-        let removedCount = 0;
-
-        for (const entry of entries) {
-            if (!entry.isFile()) continue;
-
-            const filePath = path.join(DOWNLOADS_DIR, entry.name);
-            const stats = await fs.stat(filePath);
-            const ageMs = now - stats.mtimeMs;
-
-            if (ageMs > DOWNLOAD_TTL_MS) {
-                await fs.unlink(filePath);
-                removedCount += 1;
-            }
-        }
-
-        if (removedCount > 0) {
-            console.log(`Cleanup removed ${removedCount} old download file(s).`);
-        }
-    } catch (error) {
-        console.error('Cleanup error:', error.message);
-    }
-}
-
 // Main download endpoint
 app.post('/api/download', async (req, res) => {
     try {
-        const { url, format } = req.body;
-        const downloadFormat = format === 'audio' ? 'audio' : 'video';
+        const { url } = req.body;
         const downloadId = Date.now().toString();
 
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -162,7 +131,7 @@ app.post('/api/download', async (req, res) => {
         });
 
         // Start download in background with progress tracking
-        downloadWithProgress(url, platform, downloadId, downloadFormat);
+        downloadWithProgress(url, platform, downloadId);
 
     } catch (error) {
         console.error('❌ Error:', error.message);
@@ -174,9 +143,8 @@ app.post('/api/download', async (req, res) => {
 });
 
 // Download function with real-time progress tracking
-async function downloadWithProgress(url, platform, downloadId, downloadFormat = 'video') {
-    const fileExtension = downloadFormat === 'audio' ? 'mp3' : 'mp4';
-    const filename = `${platform}_${downloadId}.${fileExtension}`;
+async function downloadWithProgress(url, platform, downloadId) {
+    const filename = `${platform}_${downloadId}.mp4`;
     const outputPath = path.join(DOWNLOADS_DIR, filename);
 
     try {
@@ -199,6 +167,9 @@ async function downloadWithProgress(url, platform, downloadId, downloadFormat = 
             } catch (error) {
                 console.log('⚠ No YouTube cookies found:', error.message);
             }
+            // Prefer a ready-to-serve MP4 file, then fall back to mergeable MP4 streams.
+            args.push('-f', 'best[ext=mp4][vcodec!=none][acodec!=none]/best[height<=720][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
+            args.push('--merge-output-format', 'mp4');
             // Add user agent to avoid bot detection
             args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         } else if (platform === 'instagram') {
@@ -206,6 +177,7 @@ async function downloadWithProgress(url, platform, downloadId, downloadFormat = 
             try {
                 await fs.access(cookiesPath);
                 args.push('--cookies', cookiesPath);
+                args.push('--merge-output-format', 'mp4');
             } catch {
                 sendProgress(downloadId, { type: 'error', message: 'Instagram requires cookies.txt file' });
                 return;
@@ -215,25 +187,12 @@ async function downloadWithProgress(url, platform, downloadId, downloadFormat = 
             try {
                 await fs.access(fbCookies);
                 args.push('--cookies', fbCookies);
+                args.push('-f', 'best[ext=mp4][vcodec*=avc1][acodec!=none]/best[ext=mp4][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
+                args.push('--merge-output-format', 'mp4');
             } catch {
                 sendProgress(downloadId, { type: 'error', message: 'Facebook requires cookies file' });
                 return;
             }
-        }
-
-        if (downloadFormat === 'audio') {
-            args.push('-f', 'bestaudio/best');
-            args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
-            args.push('--embed-metadata');
-        } else if (platform === 'youtube') {
-            // Prefer a ready-to-serve MP4 file, then fall back to mergeable MP4 streams.
-            args.push('-f', 'best[ext=mp4][vcodec!=none][acodec!=none]/best[height<=720][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
-            args.push('--merge-output-format', 'mp4');
-        } else if (platform === 'facebook') {
-            args.push('-f', 'best[ext=mp4][vcodec*=avc1][acodec!=none]/best[ext=mp4][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
-            args.push('--merge-output-format', 'mp4');
-        } else {
-            args.push('--merge-output-format', 'mp4');
         }
 
         args.push('-o', outputPath, url);
@@ -269,9 +228,7 @@ async function downloadWithProgress(url, platform, downloadId, downloadFormat = 
                 sendProgress(downloadId, {
                     type: 'progress',
                     progress: 95,
-                    message: downloadFormat === 'audio'
-                        ? 'Converting to MP3...'
-                        : 'Merging video and audio...'
+                    message: 'Merging video and audio...'
                 });
             }
         });
@@ -302,7 +259,7 @@ async function downloadWithProgress(url, platform, downloadId, downloadFormat = 
             
             if (code === 0) {
                 try {
-                    if (downloadFormat === 'video' && (platform === 'instagram' || platform === 'facebook')) {
+                    if (platform === 'instagram' || platform === 'facebook') {
                         await ensureCompatibleMp4(outputPath, downloadId);
                     }
 
@@ -456,18 +413,6 @@ function detectPlatform(url) {
     if (/facebook\.com|fb\.watch/.test(url)) return 'facebook';
     return null;
 }
-
-// Periodic cleanup of old downloads to keep storage usage under control on Railway.
-cleanupOldDownloads().catch((error) => {
-    console.error('Initial cleanup failed:', error.message);
-});
-
-const cleanupTimer = setInterval(() => {
-    cleanupOldDownloads().catch((error) => {
-        console.error('Scheduled cleanup failed:', error.message);
-    });
-}, DOWNLOAD_CLEANUP_INTERVAL_MS);
-cleanupTimer.unref();
 
 // Start server
 const PORT = process.env.PORT || 3001;
