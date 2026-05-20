@@ -11,8 +11,8 @@ RUN apk add --no-cache \
     && ln -sf python3 /usr/bin/python \
     && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
 
-# Install yt-dlp with default extras (EJS solver dependencies)
-RUN python3 -m pip install --no-cache-dir --break-system-packages "yt-dlp[default]"
+# Install latest yt-dlp with default extras (EJS solver dependencies)
+RUN python3 -m pip install --no-cache-dir --break-system-packages -U "yt-dlp[default]"
 
 # Verify installations
 RUN node --version && \

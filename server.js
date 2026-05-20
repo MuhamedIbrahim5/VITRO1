@@ -36,13 +36,16 @@ const FFMPEG_DIR = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFMPEG_DIR : null;
 const FFMPEG_PATH = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFMPEG_EXE : 'ffmpeg';
 const FFPROBE_PATH = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFPROBE_EXE : 'ffprobe';
 const IS_CLOUD_HOST = !HAS_LOCAL_WINDOWS_FFMPEG || Boolean(process.env.RAILWAY_ENVIRONMENT);
+const DEPLOY_VERSION = '2026-05-21-youtube-cloud-fix';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 fs.mkdir(DOWNLOADS_DIR, { recursive: true }).catch(console.error);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ 
-        status: 'ok', 
+        status: 'ok',
+        version: DEPLOY_VERSION,
+        cloud: IS_CLOUD_HOST,
         timestamp: new Date().toISOString(),
         uptime: process.uptime()
     });
@@ -167,9 +170,10 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
 
     if (platform === 'youtube') {
         args.push('--user-agent', YT_USER_AGENT);
-        args.push('--extractor-args', 'youtube:player_client=android,web');
+        args.push('--extractor-args', 'youtube:player_client=tv,android,web');
 
         if (IS_CLOUD_HOST) {
+            args.push('--remote-components', 'ejs:github');
             args.push('--js-runtimes', `deno:/usr/local/bin/deno,node:${process.execPath}`);
         }
 
