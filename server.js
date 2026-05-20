@@ -35,6 +35,8 @@ const HAS_LOCAL_WINDOWS_FFMPEG =
 const FFMPEG_DIR = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFMPEG_DIR : null;
 const FFMPEG_PATH = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFMPEG_EXE : 'ffmpeg';
 const FFPROBE_PATH = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFPROBE_EXE : 'ffprobe';
+const IS_CLOUD_HOST = !HAS_LOCAL_WINDOWS_FFMPEG || Boolean(process.env.RAILWAY_ENVIRONMENT);
+const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 fs.mkdir(DOWNLOADS_DIR, { recursive: true }).catch(console.error);
 
 // Health check endpoint
@@ -142,75 +144,84 @@ app.post('/api/download', async (req, res) => {
     }
 });
 
-// Download function with real-time progress tracking
-async function downloadWithProgress(url, platform, downloadId) {
-    const filename = `${platform}_${downloadId}.mp4`;
-    const outputPath = path.join(DOWNLOADS_DIR, filename);
+function isYoutubeAuthError(text) {
+    return /Sign in|cookies|authentication|not a bot/i.test(String(text || ''));
+}
 
+async function fileExists(filePath) {
     try {
-        sendProgress(downloadId, { type: 'status', message: 'Starting download...', progress: 0 });
+        await fs.access(filePath);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
-        // Build yt-dlp command
-        let args = ['--newline', '--no-warnings', '--no-playlist'];
-        if (FFMPEG_DIR) {
-            args.push('--ffmpeg-location', FFMPEG_DIR);
+async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
+    const { useYoutubeCookies = true, cloudYoutubeMode = false } = options;
+    const args = ['--newline', '--no-warnings', '--no-playlist'];
+
+    if (FFMPEG_DIR) {
+        args.push('--ffmpeg-location', FFMPEG_DIR);
+    }
+
+    if (platform === 'youtube') {
+        args.push('--user-agent', YT_USER_AGENT);
+        args.push('--extractor-args', 'youtube:player_client=android,web');
+
+        if (IS_CLOUD_HOST) {
+            args.push('--js-runtimes', `deno:/usr/local/bin/deno,node:${process.execPath}`);
         }
 
-        if (platform === 'youtube') {
-            // Add YouTube cookies if available
+        if (useYoutubeCookies) {
             const ytCookies = path.join(__dirname, 'youtube_cookies.txt');
-            try {
-                await fs.access(ytCookies);
+            if (await fileExists(ytCookies)) {
                 const stats = await fs.stat(ytCookies);
                 console.log(`✓ Found YouTube cookies file (${stats.size} bytes)`);
                 args.push('--cookies', ytCookies);
-            } catch (error) {
-                console.log('⚠ No YouTube cookies found:', error.message);
-            }
-            // Prefer a ready-to-serve MP4 file, then fall back to mergeable MP4 streams.
-            args.push('-f', 'best[ext=mp4][vcodec!=none][acodec!=none]/best[height<=720][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
-            args.push('--merge-output-format', 'mp4');
-            // Add user agent to avoid bot detection
-            args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        } else if (platform === 'instagram') {
-            const cookiesPath = path.join(__dirname, 'cookies.txt');
-            try {
-                await fs.access(cookiesPath);
-                args.push('--cookies', cookiesPath);
-                args.push('--merge-output-format', 'mp4');
-            } catch {
-                sendProgress(downloadId, { type: 'error', message: 'Instagram requires cookies.txt file' });
-                return;
-            }
-        } else if (platform === 'facebook') {
-            const fbCookies = 'D:\\Vitro\\www.facebook.com_cookies.txt';
-            try {
-                await fs.access(fbCookies);
-                args.push('--cookies', fbCookies);
-                args.push('-f', 'best[ext=mp4][vcodec*=avc1][acodec!=none]/best[ext=mp4][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
-                args.push('--merge-output-format', 'mp4');
-            } catch {
-                sendProgress(downloadId, { type: 'error', message: 'Facebook requires cookies file' });
-                return;
             }
         }
 
-        args.push('-o', outputPath, url);
+        if (cloudYoutubeMode || IS_CLOUD_HOST) {
+            args.push('-f', 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
+        } else {
+            args.push('-f', 'best[ext=mp4][vcodec!=none][acodec!=none]/best[height<=720][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
+        }
 
+        args.push('--merge-output-format', 'mp4');
+    } else if (platform === 'instagram') {
+        const cookiesPath = path.join(__dirname, 'cookies.txt');
+        if (!(await fileExists(cookiesPath))) {
+            throw new Error('Instagram requires cookies.txt file');
+        }
+        args.push('--cookies', cookiesPath);
+        args.push('--merge-output-format', 'mp4');
+    } else if (platform === 'facebook') {
+        const fbCookies = path.join(__dirname, 'www.facebook.com_cookies.txt');
+        if (!(await fileExists(fbCookies))) {
+            throw new Error('Facebook requires cookies file');
+        }
+        args.push('--cookies', fbCookies);
+        args.push('-f', 'best[ext=mp4][vcodec*=avc1][acodec!=none]/best[ext=mp4][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
+        args.push('--merge-output-format', 'mp4');
+    }
+
+    args.push('-o', outputPath, url);
+    return args;
+}
+
+function runYtDlp(args, downloadId) {
+    return new Promise((resolve) => {
         console.log(`🔧 Command: yt-dlp ${args.join(' ')}`);
 
-        // Spawn yt-dlp process
         const proc = spawn('yt-dlp', args, { shell: false });
-
         let lastProgress = 0;
         let lastError = '';
-        let progressErrorSent = false;
 
         proc.stdout.on('data', (data) => {
             const output = data.toString();
             console.log('yt-dlp:', output);
 
-            // Parse progress: [download]  45.2% of 10.50MiB at 1.23MiB/s ETA 00:05
             const progressMatch = output.match(/\[download\]\s+(\d+\.?\d*)%/);
             if (progressMatch) {
                 const progress = parseFloat(progressMatch[1]);
@@ -236,63 +247,93 @@ async function downloadWithProgress(url, platform, downloadId) {
         proc.stderr.on('data', (data) => {
             const errorMsg = data.toString();
             lastError += errorMsg;
-            console.error('yt-dlp error:', errorMsg);
-            
-            // Send specific error messages
-            if (errorMsg.includes('Sign in')) {
-                progressErrorSent = true;
-                sendProgress(downloadId, { 
-                    type: 'error', 
-                    message: 'YouTube requires authentication for this video' 
-                });
-            } else if (errorMsg.includes('Video unavailable')) {
-                progressErrorSent = true;
-                sendProgress(downloadId, { 
-                    type: 'error', 
-                    message: 'Video is unavailable or private' 
-                });
-            }
+            console.error('yt-dlp stderr:', errorMsg);
         });
 
-        proc.on('close', async (code) => {
+        proc.on('close', (code) => {
             console.log(`yt-dlp process exited with code: ${code}`);
-            
-            if (code === 0) {
-                try {
-                    if (platform === 'instagram' || platform === 'facebook') {
-                        await ensureCompatibleMp4(outputPath, downloadId);
-                    }
-
-                    await fs.access(outputPath);
-                    const stats = await fs.stat(outputPath);
-
-                    if (stats.size > 0) {
-                        console.log(`✅ Download complete: ${filename} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
-                        sendProgress(downloadId, {
-                            type: 'complete',
-                            progress: 100,
-                            message: 'Download complete!',
-                            downloadUrl: `/downloads/${filename}`,
-                            filename: filename
-                        });
-                    } else {
-                        throw new Error('File is empty');
-                    }
-                } catch (error) {
-                    console.error('File check error:', error);
-                    sendProgress(downloadId, { type: 'error', message: error.message || 'Failed to save video' });
-                }
-            } else {
-                console.error(`Download failed with exit code: ${code}`);
-                if (!progressErrorSent) {
-                    sendProgress(downloadId, {
-                        type: 'error',
-                        message: getDownloadErrorMessage(lastError, code)
-                    });
-                }
-            }
+            resolve({ code, lastError });
         });
 
+        proc.on('error', (error) => {
+            console.error('yt-dlp spawn error:', error);
+            resolve({ code: 1, lastError: error.message });
+        });
+    });
+}
+
+async function finalizeDownload(outputPath, filename, platform, downloadId) {
+    if (platform === 'instagram' || platform === 'facebook') {
+        await ensureCompatibleMp4(outputPath, downloadId);
+    }
+
+    await fs.access(outputPath);
+    const stats = await fs.stat(outputPath);
+
+    if (stats.size <= 0) {
+        throw new Error('File is empty');
+    }
+
+    console.log(`✅ Download complete: ${filename} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+    sendProgress(downloadId, {
+        type: 'complete',
+        progress: 100,
+        message: 'Download complete!',
+        downloadUrl: `/downloads/${filename}`,
+        filename: filename
+    });
+}
+
+// Download function with real-time progress tracking
+async function downloadWithProgress(url, platform, downloadId) {
+    const filename = `${platform}_${downloadId}.mp4`;
+    const outputPath = path.join(DOWNLOADS_DIR, filename);
+
+    try {
+        sendProgress(downloadId, { type: 'status', message: 'Starting download...', progress: 0 });
+
+        let args = await buildYtDlpArgs(url, platform, outputPath, {
+            useYoutubeCookies: !IS_CLOUD_HOST,
+            cloudYoutubeMode: IS_CLOUD_HOST
+        });
+
+        let result = await runYtDlp(args, downloadId);
+
+        if (
+            platform === 'youtube' &&
+            result.code !== 0 &&
+            isYoutubeAuthError(result.lastError) &&
+            args.includes('--cookies')
+        ) {
+            console.log('⚠ YouTube auth failed with cookies, retrying without cookies...');
+            sendProgress(downloadId, {
+                type: 'status',
+                message: 'Retrying download...',
+                progress: 0
+            });
+
+            args = await buildYtDlpArgs(url, platform, outputPath, {
+                useYoutubeCookies: false,
+                cloudYoutubeMode: true
+            });
+            result = await runYtDlp(args, downloadId);
+        }
+
+        if (result.code === 0) {
+            try {
+                await finalizeDownload(outputPath, filename, platform, downloadId);
+            } catch (error) {
+                console.error('File check error:', error);
+                sendProgress(downloadId, { type: 'error', message: error.message || 'Failed to save video' });
+            }
+            return;
+        }
+
+        console.error(`Download failed with exit code: ${result.code}`);
+        sendProgress(downloadId, {
+            type: 'error',
+            message: getDownloadErrorMessage(result.lastError, result.code)
+        });
     } catch (error) {
         console.error('❌ Download error:', error);
         sendProgress(downloadId, { type: 'error', message: error.message || 'Download failed' });
@@ -307,7 +348,9 @@ function getDownloadErrorMessage(errorText, code) {
     }
 
     if (/Sign in|cookies|authentication|not a bot/i.test(text)) {
-        return 'YouTube needs fresh cookies for this video. Please update youtube_cookies.txt and try again.';
+        return IS_CLOUD_HOST
+            ? 'YouTube blocked this request from the server. Please try again in a minute or use another video.'
+            : 'YouTube needs fresh cookies for this video. Please update youtube_cookies.txt and try again.';
     }
 
     if (/Video unavailable|Private video|This video is unavailable/i.test(text)) {
