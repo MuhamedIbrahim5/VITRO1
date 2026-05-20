@@ -115,15 +115,21 @@ if (!localStorage.getItem('preferredLanguage')) {
 
 switchLanguage(savedLang, savedFlag);
 
-// API Base URL - supports explicit backend override for static hosting
+// API Base URL - static hosts (GitHub Pages / Firebase) use Railway backend
+const DEFAULT_PRODUCTION_API_BASE = 'https://vitro1-production-be78.up.railway.app';
 const normalizeApiBase = (value) => String(value || '').trim().replace(/\/+$/, '');
 const configuredApiBase = normalizeApiBase(
     window.VITRO_API_BASE_URL || localStorage.getItem('VITRO_API_BASE_URL')
 );
+const hostname = window.location.hostname;
+const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+const isPrivateLan = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(hostname);
 const API_BASE_URL = configuredApiBase || (
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    isLocalHost
         ? 'http://localhost:3001'
-        : window.location.origin
+        : isPrivateLan
+            ? window.location.origin
+            : DEFAULT_PRODUCTION_API_BASE
 );
 
 // عناصر الصفحة
