@@ -11,6 +11,7 @@ body {
     line-height: 1.6;
     min-height: 100vh;
     transition: background-color 0.3s, color 0.3s;
+    overflow-x: hidden;
 }
 
 /* Hero Header Section */
@@ -18,7 +19,7 @@ body {
     position: relative;
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     padding: 4rem 2rem 8rem;
-    margin: -20px -20px 3rem -20px;
+    margin: 0 0 3rem;
     overflow: hidden;
 }
 
@@ -622,6 +623,27 @@ body[dir="rtl"] .paste-tooltip {
     transform: none;
 }
 
+.download-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 26px;
+    margin-bottom: 26px;
+}
+
+.download-actions .download-btn {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.download-audio-btn {
+    background: linear-gradient(135deg, #1f2937 0%, #0ea5e9 100%);
+}
+
+.download-audio-btn:hover {
+    box-shadow: 0 8px 20px rgba(14, 165, 233, 0.35);
+}
+
 .progress-container {
     margin-top: 20px;
     padding: 20px;
@@ -884,6 +906,10 @@ body[dir="rtl"] .lang-option {
 
     .main-tool {
         padding: 25px;
+    }
+
+    .download-actions {
+        grid-template-columns: 1fr;
     }
 
     .features {
@@ -1458,7 +1484,7 @@ body.dark-mode .header-actions .dark-mode-toggle {
 
 @media (max-width: 768px) {
     .header-container {
-        padding: 0.75rem 1rem;
+        padding: 0.75rem 0;
     }
 
     .logo-text {

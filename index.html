@@ -10,6 +10,9 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Cairo:wght@400;600;700&display=swap"
         rel="stylesheet">
+    <script>
+        window.VITRO_API_BASE_URL = 'https://vitro1-production-be78.up.railway.app';
+    </script>
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -118,8 +121,12 @@
                 <div id="pasteTooltip" class="paste-tooltip hidden"></div>
             </div>
 
-            <button id="downloadBtn" class="download-btn" data-en="Download Video" data-ar="تحميل الفيديو">Download
-                Video</button>
+            <div class="download-actions">
+                <button id="downloadBtn" class="download-btn" data-en="Download Video" data-ar="تحميل الفيديو">Download
+                    Video</button>
+                <button id="downloadAudioBtn" class="download-btn download-audio-btn" data-en="Download MP3"
+                    data-ar="تحميل MP3">Download MP3</button>
+            </div>
 
             <!-- Popular Platforms -->
             <div class="platform-buttons">
