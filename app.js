@@ -136,6 +136,10 @@ const API_BASE_URL = configuredApiBase || (
 const LOCAL_API_BASE = 'http://localhost:3001';
 let activeApiBase = API_BASE_URL;
 
+function isInstagramUrl(url) {
+    return /instagram\.com/i.test(url);
+}
+
 function isYoutubeUrl(url) {
     return /youtube\.com|youtu\.be/i.test(url);
 }
@@ -144,19 +148,113 @@ function isYoutubeBackendError(message) {
     return /authentication|blocked|Sign in|cookies|not a bot/i.test(String(message || ''));
 }
 
-async function isLocalServerAvailable() {
+function parseLanFromPageUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('api') || params.get('lan');
+    if (!raw) return null;
+    if (raw.includes('://')) return normalizeApiBase(raw);
+    const host = raw.replace(/:\d+$/, '');
+    return `http://${host}:3001`;
+}
+
+function getLanApiCandidates() {
+    const fromQuery = parseLanFromPageUrl();
+    const saved = normalizeApiBase(localStorage.getItem('VITRO_LAN_API'));
+    const defaults = ['http://192.168.1.3:3001', 'http://192.168.0.3:3001', 'http://192.168.1.2:3001'];
+    return [...new Set([fromQuery, saved, ...defaults].filter(Boolean))];
+}
+
+async function isApiAvailable(apiBase, options = {}) {
+    const { needInstagram = false } = options;
     try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 2000);
-        const res = await fetch(`${LOCAL_API_BASE}/health`, { signal: controller.signal });
+        const timer = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch(`${apiBase}/health`, { signal: controller.signal });
         clearTimeout(timer);
         if (!res.ok) return false;
         const data = await res.json();
-        return Boolean(data.version);
+        if (!data.version) return false;
+        if (needInstagram && !data.instagramCookies) return false;
+        return true;
     } catch {
         return false;
     }
 }
+
+async function isLocalServerAvailable() {
+    return isApiAvailable(LOCAL_API_BASE);
+}
+
+async function findLanBackend(needInstagram = false) {
+    if (isLocalHost || isPrivateLan) return null;
+
+    for (const base of getLanApiCandidates()) {
+        if (await isApiAvailable(base, { needInstagram })) {
+            localStorage.setItem('VITRO_LAN_API', base);
+            console.log('Using LAN backend:', base);
+            return base;
+        }
+    }
+    return null;
+}
+
+async function resolveApiBase(url) {
+    if (isLocalHost || isPrivateLan) return API_BASE_URL;
+    if (!isInstagramUrl(url)) return API_BASE_URL;
+
+    const lanApi = await findLanBackend(true);
+    if (lanApi) return lanApi;
+
+    return API_BASE_URL;
+}
+
+function isMobileDevice() {
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+function setupMobileLanHint() {
+    if (isLocalHost || isPrivateLan || !isMobileDevice()) return;
+    if (API_BASE_URL !== DEFAULT_PRODUCTION_API_BASE) return;
+
+    const saved = localStorage.getItem('VITRO_LAN_API');
+    const hero = document.querySelector('.hero-download-tool') || document.querySelector('.hero-content');
+    if (!hero || document.getElementById('mobileLanHint')) return;
+
+    const box = document.createElement('div');
+    box.id = 'mobileLanHint';
+    box.className = 'mobile-lan-hint';
+    box.innerHTML = currentLang === 'ar'
+        ? `<strong>إنستجرام من الموبايل:</strong> افتح موقع اللابتوب على نفس الواي فاي<br>
+           <a href="http://192.168.1.3:3001">http://192.168.1.3:3001</a>
+           <span class="lan-hint-or">أو</span>
+           <input type="text" id="lanIpInput" placeholder="192.168.1.3" value="${saved ? saved.replace('http://', '').replace(':3001', '') : '192.168.1.3'}">
+           <button type="button" id="lanIpSaveBtn">ربط اللابتوب</button>`
+        : `<strong>Instagram on phone:</strong> use your laptop server on same Wi‑Fi<br>
+           <a href="http://192.168.1.3:3001">http://192.168.1.3:3001</a>
+           <span class="lan-hint-or">or</span>
+           <input type="text" id="lanIpInput" placeholder="192.168.1.3" value="${saved ? saved.replace('http://', '').replace(':3001', '') : '192.168.1.3'}">
+           <button type="button" id="lanIpSaveBtn">Link laptop</button>`;
+
+    hero.parentNode.insertBefore(box, hero);
+
+    document.getElementById('lanIpSaveBtn').addEventListener('click', async () => {
+        const ip = document.getElementById('lanIpInput').value.trim().replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+        if (!ip) return;
+        const base = `http://${ip}:3001`;
+        localStorage.setItem('VITRO_LAN_API', base);
+        const ok = await isApiAvailable(base, { needInstagram: true });
+        showError(ok
+            ? (currentLang === 'ar' ? '✓ تم ربط اللابتوب. جرّب التحميل الآن.' : '✓ Laptop linked. Try download now.')
+            : (currentLang === 'ar' ? 'لم يتم العثور على السيرفر. تأكد أن npm start شغال على اللابتوب.' : 'Server not found. Ensure npm start is running on laptop.'));
+        if (ok) box.classList.add('linked');
+    });
+}
+
+const lanFromUrl = parseLanFromPageUrl();
+if (lanFromUrl) {
+    localStorage.setItem('VITRO_LAN_API', lanFromUrl);
+}
+setupMobileLanHint();
 
 async function checkProductionBackend() {
     if (isLocalHost || API_BASE_URL !== DEFAULT_PRODUCTION_API_BASE) return;
@@ -325,7 +423,7 @@ async function handleDownload() {
     }
     
     startProcessing();
-    activeApiBase = API_BASE_URL;
+    activeApiBase = await resolveApiBase(url);
     console.log('Starting download request...', activeApiBase);
     
     try {
@@ -366,7 +464,7 @@ async function handleDownload() {
         
         if (data?.success && data?.downloadId) {
             // Use fast fake progress and listen in background
-            listenToProgressBackground(data.downloadId);
+            listenToProgressBackground(data.downloadId, activeApiBase);
         } else {
             showError(data.error || t('errorOccurred'));
         }
@@ -428,6 +526,10 @@ function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
                     retryDownloadViaLocalhost(url, data.message);
                     return;
                 }
+                if (isInstagramUrl(url) && apiBase === DEFAULT_PRODUCTION_API_BASE) {
+                    retryDownloadViaLan(url, data.message);
+                    return;
+                }
                 showYoutubeDeployError(data.message);
             }
         } catch (err) {
@@ -445,6 +547,37 @@ function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
             showError(t('tryAgain'));
         }
     };
+}
+
+async function retryDownloadViaLan(url, originalError) {
+    updateProgress(15, currentLang === 'ar' ? 'الاتصال بسيرفر اللابتوب...' : 'Connecting to laptop server...');
+    const lanApi = await findLanBackend(true);
+    if (!lanApi) {
+        showError(
+            currentLang === 'ar'
+                ? 'إنستجرام من الموبايل يحتاج سيرفر اللابتوب. افتح http://192.168.1.3:3001 على نفس الواي فاي، أو اربط IP اللابتوب أعلاه.'
+                : 'Instagram on phone needs the laptop server. Open http://192.168.1.3:3001 on same Wi‑Fi, or link laptop IP above.'
+        );
+        return;
+    }
+
+    activeApiBase = lanApi;
+    try {
+        const response = await fetch(`${lanApi}/api/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+        const data = await response.json();
+        if (response.ok && data?.success && data?.downloadId) {
+            listenToProgressBackground(data.downloadId, lanApi);
+            return;
+        }
+        showError(data?.error || originalError);
+    } catch (err) {
+        console.error('LAN fallback failed:', err);
+        showError(originalError || t('tryAgain'));
+    }
 }
 
 async function retryDownloadViaLocalhost(url, originalError) {
