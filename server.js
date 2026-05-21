@@ -41,10 +41,11 @@ const IS_CLOUD_HOST = Boolean(
     process.env.RENDER ||
     (!HAS_LOCAL_WINDOWS_FFMPEG && process.platform !== 'win32')
 );
-const DEPLOY_VERSION = '2026-05-21-force-rebuild-03';
+const DEPLOY_VERSION = '2026-05-21-youtube-fix';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+// Try without cookies first (android works best); cookies only on auth retry
 const YOUTUBE_CLIENTS = IS_CLOUD_HOST
-    ? ['android,web', 'android', 'ios', 'web', 'mweb', 'tv_embedded']
+    ? ['android', 'ios', 'web', 'mweb']
     : ['android', 'web', 'ios'];
 const YT_COOKIES_PATH = path.join(__dirname, 'youtube_cookies.txt');
 const IG_COOKIES_PATH = path.join(__dirname, 'cookies.txt');
@@ -376,7 +377,7 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
         }
 
         if (cloudYoutubeMode || IS_CLOUD_HOST) {
-            args.push('-f', 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
+            args.push('-f', 'best[ext=mp4]/bestvideo+bestaudio/best');
         } else {
             args.push('-f', 'best[ext=mp4][vcodec!=none][acodec!=none]/best[height<=720][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
         }
@@ -511,10 +512,11 @@ function shouldRetryYoutube(errorText) {
 async function runYoutubeDownload(url, outputPath, downloadId) {
     let lastResult = { code: 1, lastError: '' };
     const hasCookies = await fileExists(YT_COOKIES_PATH);
+    let useCookiesNext = false;
 
     for (let i = 0; i < YOUTUBE_CLIENTS.length; i++) {
         const client = YOUTUBE_CLIENTS[i];
-        const useCookies = hasCookies;
+        const useCookies = hasCookies && useCookiesNext;
 
         sendProgress(downloadId, {
             type: 'status',
@@ -533,12 +535,14 @@ async function runYoutubeDownload(url, outputPath, downloadId) {
             return lastResult;
         }
 
-        console.log(`⚠ YouTube client "${client}" failed, exit ${lastResult.code}`);
+        console.log(`⚠ YouTube client "${client}" failed (cookies=${useCookies}), exit ${lastResult.code}`);
+
+        if (hasCookies && isYoutubeAuthError(lastResult.lastError)) {
+            useCookiesNext = true;
+        }
+
         const fatal = /Video unavailable|Private video|This video is unavailable|age.restricted|copyright/i.test(lastResult.lastError);
         if (fatal) break;
-        if (!shouldRetryYoutube(lastResult.lastError) && i >= YOUTUBE_CLIENTS.length - 1) {
-            break;
-        }
     }
 
     return lastResult;
@@ -608,7 +612,7 @@ function getDownloadErrorMessage(errorText, code) {
 
     if (/Sign in|cookies|authentication|not a bot|requires authentication/i.test(text)) {
         return IS_CLOUD_HOST
-            ? 'YouTube blocked this video on the server. Redeploy Railway with fresh cookies, or try again in a minute.'
+            ? 'YouTube blocked this video. Try again in a minute, or remove stale YOUTUBE_COOKIES_BASE64 from Railway variables.'
             : 'YouTube needs fresh cookies. Run export_youtube_cookies.bat then restart the server.';
     }
 
