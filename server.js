@@ -41,7 +41,7 @@ const IS_CLOUD_HOST = Boolean(
     process.env.RENDER ||
     (!HAS_LOCAL_WINDOWS_FFMPEG && process.platform !== 'win32')
 );
-const DEPLOY_VERSION = '2026-05-21-youtube-auth-fix';
+const DEPLOY_VERSION = '2026-05-21-youtube-auth-fix-v2';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const YOUTUBE_CLIENTS = IS_CLOUD_HOST
     ? ['android,web', 'android', 'ios', 'web', 'mweb', 'tv_embedded']
@@ -540,7 +540,19 @@ const PORT = process.env.PORT || 3001;
 const HOST = '0.0.0.0';
 
 app.listen(PORT, HOST, () => {
-    console.log(`\n🚀 Server running on port ${PORT}`);
-    console.log(`📡 http://${HOST}:${PORT}\n`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    const lanIp = Object.values(require('os').networkInterfaces())
+        .flat()
+        .find((n) => n && n.family === 'IPv4' && !n.internal)?.address;
+
+    console.log('\n========================================');
+    console.log(`  Server running on port ${PORT}`);
+    console.log('========================================');
+    console.log('  This PC:     http://localhost:3001');
+    console.log('               http://127.0.0.1:3001');
+    if (lanIp) {
+        console.log(`  Other device: http://${lanIp}:3001  (same Wi-Fi)`);
+    }
+    console.log('  Do NOT open 0.0.0.0 in the browser.');
+    console.log(`  Version: ${DEPLOY_VERSION}`);
+    console.log('========================================\n');
 });

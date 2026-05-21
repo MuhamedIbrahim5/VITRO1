@@ -28,8 +28,12 @@ npm run sync
 # Firebase hosting
 npm run deploy:firebase
 
-# Railway: push to main (auto-deploy via Dockerfile)
+# Railway: push to main, then Redeploy in Railway dashboard if /health has no "version" field
 git push origin main
+
+# Optional: fresh YouTube cookies for Railway
+powershell -File scripts/export-railway-cookies.ps1
+# Paste output into Railway variable YOUTUBE_COOKIES_BASE64, then Redeploy
 ```
 
 ## Local Development
