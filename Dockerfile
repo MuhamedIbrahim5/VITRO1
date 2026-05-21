@@ -37,7 +37,7 @@ COPY . .
 RUN mkdir -p downloads
 
 # Bump to force Railway rebuild when backend changes
-ENV DEPLOY_BUILD_ID=2026-05-21-youtube-auth-fix-v2
+ENV DEPLOY_BUILD_ID=2026-05-21-railway-fb-ig
 
 # Expose port
 EXPOSE 3001

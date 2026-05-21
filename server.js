@@ -41,7 +41,7 @@ const IS_CLOUD_HOST = Boolean(
     process.env.RENDER ||
     (!HAS_LOCAL_WINDOWS_FFMPEG && process.platform !== 'win32')
 );
-const DEPLOY_VERSION = '2026-05-21-facebook-fix';
+const DEPLOY_VERSION = '2026-05-21-railway-fb-ig';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const YOUTUBE_CLIENTS = IS_CLOUD_HOST
     ? ['android,web', 'android', 'ios', 'web', 'mweb', 'tv_embedded']
@@ -101,7 +101,13 @@ function normalizeFacebookUrl(url) {
     if (/facebook\.com\/share\/r\//i.test(url)) {
         return url.split('?')[0];
     }
-    return url;
+    return url.split('?')[0];
+}
+
+function normalizeInstagramUrl(url) {
+    let normalized = url.replace(/instagram\.com\/reels\//i, 'instagram.com/reel/');
+    normalized = normalized.replace(/instagram\.com\/reel\/([^/?#]+)/i, 'https://www.instagram.com/reel/$1/');
+    return normalized.split('?')[0];
 }
 
 async function initFacebookCookies() {
@@ -276,6 +282,12 @@ app.post('/api/download', async (req, res) => {
             videoUrl = normalizeFacebookUrl(url);
             if (videoUrl !== url) {
                 console.log('📝 Normalized Facebook URL:', videoUrl);
+            }
+        }
+        if (/instagram\.com/i.test(url)) {
+            videoUrl = normalizeInstagramUrl(url);
+            if (videoUrl !== url) {
+                console.log('📝 Normalized Instagram URL:', videoUrl);
             }
         }
 

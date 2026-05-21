@@ -630,7 +630,19 @@ async function retryDownloadViaLocalhost(url, originalError) {
     showYoutubeDeployError(originalError);
 }
 
+function isFacebookOrInstagramError(message) {
+    return /facebook|instagram|cookies|sessionid|ffmpeg version/i.test(String(message || ''));
+}
+
 function showYoutubeDeployError(message) {
+    if (isFacebookOrInstagramError(message) && API_BASE_URL === DEFAULT_PRODUCTION_API_BASE) {
+        showError(
+            currentLang === 'ar'
+                ? 'فيسبوك وإنستجرام على الموقع يحتاجان كوكيز على Railway. شغّل scripts/export-railway-all-cookies.ps1 ثم Redeploy.'
+                : 'Facebook/Instagram on the live site need cookies on Railway. Run export-railway-all-cookies.ps1 then Redeploy.'
+        );
+        return;
+    }
     if (isYoutubeBackendError(message) && API_BASE_URL === DEFAULT_PRODUCTION_API_BASE) {
         showError(
             currentLang === 'ar'

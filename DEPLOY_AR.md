@@ -19,14 +19,27 @@ npm start
 
 ---
 
-## تحديث Railway (للموقع على الإنترنت)
+## تحديث Railway (فيسبوك + إنستجرام على الموقع)
 
-1. افتح https://railway.app/dashboard
-2. مشروع **vitro1-production**
-3. **Settings** → تأكد الربط مع GitHub repo `VITRO1`
-4. **Deployments** → **Redeploy** (أو Deploy Latest)
-5. تحقق: https://vitro1-production-be78.up.railway.app/health  
-   يجب أن يظهر: `"version":"2026-05-21-youtube-auth-fix-v2"`
+**يوتيوب وتيك توك** يعملان بدون كوكيز. **فيسبوك وإنستجرام** يحتاجان كوكيز على Railway.
+
+### 1) صدّر الكوكيز للسحابة
+```powershell
+cd D:\Vitro1
+powershell -File scripts\export-railway-all-cookies.ps1
+```
+
+### 2) أضف المتغيرات في Railway
+مشروع **vitro1-production** → **Variables**:
+- `FACEBOOK_COOKIES_BASE64` ← من الملف `www.facebook.com_cookies.txt`
+- `INSTAGRAM_COOKIES_BASE64` ← من `cookies.txt` (يجب أن يحتوي sessionid — صدّره من Cookie-Editor على instagram.com)
+- `YOUTUBE_COOKIES_BASE64` ← اختياري
+
+### 3) Redeploy
+**Deployments** → **Redeploy**
+
+تحقق: https://vitro1-production-be78.up.railway.app/health  
+يجب: `"facebookCookies":true` و `"instagramCookies":true`
 
 ### كوكيز Facebook (مطلوب)
 
