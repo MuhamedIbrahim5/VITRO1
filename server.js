@@ -41,13 +41,39 @@ const IS_CLOUD_HOST = Boolean(
     process.env.RENDER ||
     (!HAS_LOCAL_WINDOWS_FFMPEG && process.platform !== 'win32')
 );
-const DEPLOY_VERSION = '2026-05-21-full-deploy';
+const DEPLOY_VERSION = '2026-05-21-youtube-auth-fix';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const YOUTUBE_CLIENTS = IS_CLOUD_HOST
-    ? ['android', 'ios', 'web', 'mweb', 'tv_embedded']
+    ? ['android,web', 'android', 'ios', 'web', 'mweb', 'tv_embedded']
     : ['android', 'web', 'ios'];
 const YT_COOKIES_PATH = path.join(__dirname, 'youtube_cookies.txt');
+let youtubeCookiesReady = false;
+
+async function initYoutubeCookies() {
+    const b64 = process.env.YOUTUBE_COOKIES_BASE64;
+    if (b64) {
+        await fs.writeFile(YT_COOKIES_PATH, Buffer.from(b64, 'base64'));
+        console.log('✓ YouTube cookies loaded from YOUTUBE_COOKIES_BASE64');
+    }
+    youtubeCookiesReady = await fileExists(YT_COOKIES_PATH);
+    if (youtubeCookiesReady) {
+        const stats = await fs.stat(YT_COOKIES_PATH);
+        console.log(`✓ YouTube cookies ready (${stats.size} bytes)`);
+    } else if (IS_CLOUD_HOST) {
+        console.warn('⚠ No youtube_cookies.txt on cloud — some YouTube videos may fail');
+    }
+}
+
+function normalizeYoutubeUrl(url) {
+    const shorts = url.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]+)/i);
+    if (shorts) {
+        return `https://www.youtube.com/watch?v=${shorts[1]}`;
+    }
+    return url;
+}
+
 fs.mkdir(DOWNLOADS_DIR, { recursive: true }).catch(console.error);
+initYoutubeCookies().catch(console.error);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -55,6 +81,7 @@ app.get('/health', (req, res) => {
         status: 'ok',
         version: DEPLOY_VERSION,
         cloud: IS_CLOUD_HOST,
+        youtubeCookies: youtubeCookiesReady,
         timestamp: new Date().toISOString(),
         uptime: process.uptime()
     });
@@ -127,7 +154,15 @@ app.post('/api/download', async (req, res) => {
             });
         }
 
-        const platform = detectPlatform(url);
+        let videoUrl = url;
+        if (/youtube\.com|youtu\.be/i.test(url)) {
+            videoUrl = normalizeYoutubeUrl(url);
+            if (videoUrl !== url) {
+                console.log('📝 Normalized YouTube URL:', videoUrl);
+            }
+        }
+
+        const platform = detectPlatform(videoUrl);
         console.log('🎯 Platform detected:', platform);
 
         if (!platform) {
@@ -145,7 +180,7 @@ app.post('/api/download', async (req, res) => {
         });
 
         // Start download in background with progress tracking
-        downloadWithProgress(url, platform, downloadId);
+        downloadWithProgress(videoUrl, platform, downloadId);
 
     } catch (error) {
         console.error('❌ Error:', error.message);
@@ -310,10 +345,11 @@ function shouldRetryYoutube(errorText) {
 
 async function runYoutubeDownload(url, outputPath, downloadId) {
     let lastResult = { code: 1, lastError: '' };
+    const hasCookies = await fileExists(YT_COOKIES_PATH);
 
     for (let i = 0; i < YOUTUBE_CLIENTS.length; i++) {
         const client = YOUTUBE_CLIENTS[i];
-        const useCookies = i > 0 || (!IS_CLOUD_HOST && (await fileExists(YT_COOKIES_PATH)));
+        const useCookies = hasCookies;
 
         sendProgress(downloadId, {
             type: 'status',
@@ -333,9 +369,10 @@ async function runYoutubeDownload(url, outputPath, downloadId) {
         }
 
         console.log(`⚠ YouTube client "${client}" failed, exit ${lastResult.code}`);
-        if (!shouldRetryYoutube(lastResult.lastError) && i < YOUTUBE_CLIENTS.length - 1) {
-            const fatal = /Video unavailable|Private video|This video is unavailable|age.restricted/i.test(lastResult.lastError);
-            if (fatal) break;
+        const fatal = /Video unavailable|Private video|This video is unavailable|age.restricted|copyright/i.test(lastResult.lastError);
+        if (fatal) break;
+        if (!shouldRetryYoutube(lastResult.lastError) && i >= YOUTUBE_CLIENTS.length - 1) {
+            break;
         }
     }
 
@@ -388,10 +425,10 @@ function getDownloadErrorMessage(errorText, code) {
         return 'ffmpeg is missing or not reachable. The local ffmpeg path has been configured; restart the server and try again.';
     }
 
-    if (/Sign in|cookies|authentication|not a bot/i.test(text)) {
+    if (/Sign in|cookies|authentication|not a bot|requires authentication/i.test(text)) {
         return IS_CLOUD_HOST
-            ? 'YouTube blocked this request from the server. Please try again in a minute or use another video.'
-            : 'YouTube needs fresh cookies for this video. Please update youtube_cookies.txt and try again.';
+            ? 'YouTube blocked this video on the server. Redeploy Railway with fresh cookies, or try again in a minute.'
+            : 'YouTube needs fresh cookies. Run export_youtube_cookies.bat then restart the server.';
     }
 
     if (/Video unavailable|Private video|This video is unavailable/i.test(text)) {
