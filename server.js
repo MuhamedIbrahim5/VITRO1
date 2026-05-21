@@ -57,10 +57,15 @@ async function initInstagramCookies() {
         await fs.writeFile(IG_COOKIES_PATH, Buffer.from(b64, 'base64'));
         console.log('✓ Instagram cookies loaded from INSTAGRAM_COOKIES_BASE64');
     }
-    instagramCookiesReady = await fileExists(IG_COOKIES_PATH);
-    if (instagramCookiesReady) {
-        const stats = await fs.stat(IG_COOKIES_PATH);
-        console.log(`✓ Instagram cookies ready (${stats.size} bytes)`);
+    if (await fileExists(IG_COOKIES_PATH)) {
+        const cookieText = await fs.readFile(IG_COOKIES_PATH, 'utf8');
+        instagramCookiesReady = /\bsessionid\b/i.test(cookieText);
+        if (instagramCookiesReady) {
+            const stats = await fs.stat(IG_COOKIES_PATH);
+            console.log(`✓ Instagram cookies ready (${stats.size} bytes)`);
+        } else {
+            console.warn('⚠ cookies.txt exists but missing sessionid — export cookies while logged in to Instagram');
+        }
     } else if (IS_CLOUD_HOST) {
         console.warn('⚠ No cookies.txt — Instagram downloads will fail on cloud');
     }
@@ -94,6 +99,12 @@ initYoutubeCookies().catch(console.error);
 initInstagramCookies().catch(console.error);
 
 // Health check endpoint
+function getLanIp() {
+    return Object.values(require('os').networkInterfaces())
+        .flat()
+        .find((n) => n && n.family === 'IPv4' && !n.internal)?.address || null;
+}
+
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'ok',
@@ -101,6 +112,7 @@ app.get('/health', (req, res) => {
         cloud: IS_CLOUD_HOST,
         youtubeCookies: youtubeCookiesReady,
         instagramCookies: instagramCookiesReady,
+        lanIp: getLanIp(),
         timestamp: new Date().toISOString(),
         uptime: process.uptime()
     });

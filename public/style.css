@@ -1166,6 +1166,54 @@ body.dark-mode .hero-download-tool .status-message {
     color: #333;
 }
 
+.mobile-lan-hint {
+    background: rgba(255, 255, 255, 0.95);
+    color: #1f2937;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin: 1rem auto 0;
+    max-width: 520px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    text-align: center;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.mobile-lan-hint a {
+    color: #059669;
+    font-weight: 700;
+    word-break: break-all;
+}
+
+.mobile-lan-hint input {
+    width: 130px;
+    margin: 0.5rem 0.35rem 0;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+}
+
+.mobile-lan-hint button {
+    margin-top: 0.5rem;
+    padding: 0.45rem 0.9rem;
+    border: none;
+    border-radius: 8px;
+    background: #059669;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.mobile-lan-hint.linked {
+    border: 2px solid #10b981;
+}
+
+.lan-hint-or {
+    display: inline-block;
+    margin: 0 0.35rem;
+    opacity: 0.7;
+}
+
 
 /* Stats Section */
 .stats-section {
