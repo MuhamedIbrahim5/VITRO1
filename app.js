@@ -133,6 +133,45 @@ const API_BASE_URL = configuredApiBase || (
             ? window.location.origin
             : DEFAULT_PRODUCTION_API_BASE
 );
+const LOCAL_API_BASE = 'http://localhost:3001';
+let activeApiBase = API_BASE_URL;
+
+function isYoutubeUrl(url) {
+    return /youtube\.com|youtu\.be/i.test(url);
+}
+
+function isYoutubeBackendError(message) {
+    return /authentication|blocked|Sign in|cookies|not a bot/i.test(String(message || ''));
+}
+
+async function isLocalServerAvailable() {
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(`${LOCAL_API_BASE}/health`, { signal: controller.signal });
+        clearTimeout(timer);
+        if (!res.ok) return false;
+        const data = await res.json();
+        return Boolean(data.version);
+    } catch {
+        return false;
+    }
+}
+
+async function checkProductionBackend() {
+    if (isLocalHost || API_BASE_URL !== DEFAULT_PRODUCTION_API_BASE) return;
+    try {
+        const res = await fetch(`${DEFAULT_PRODUCTION_API_BASE}/health`);
+        const data = await res.json();
+        if (!data.version) {
+            console.warn('Railway backend is outdated — Redeploy required in Railway dashboard');
+        }
+    } catch (err) {
+        console.warn('Production backend unreachable:', err.message);
+    }
+}
+
+checkProductionBackend();
 
 // عناصر الصفحة
 const videoUrlInput = document.getElementById('videoUrl');
@@ -286,10 +325,11 @@ async function handleDownload() {
     }
     
     startProcessing();
-    console.log('Starting download request...');
+    activeApiBase = API_BASE_URL;
+    console.log('Starting download request...', activeApiBase);
     
     try {
-        const response = await fetch(`${API_BASE_URL}/api/download`, {
+        const response = await fetch(`${activeApiBase}/api/download`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -308,7 +348,7 @@ async function handleDownload() {
             const rawText = await response.text();
             console.error('Non-JSON response preview:', rawText.slice(0, 180));
 
-            if (response.status === 404 && API_BASE_URL === window.location.origin) {
+            if (response.status === 404 && activeApiBase === window.location.origin) {
                 showError(currentLang === 'ar'
                     ? 'خدمة التحميل غير متصلة. تأكد أن السيرفر يعمل.'
                     : 'Download service is not connected. Make sure the server is running.');
@@ -346,9 +386,9 @@ function updateProgress(progress, message) {
 }
 
 // Listen to SSE in background without showing slow progress
-function listenToProgressBackground(downloadId) {
-    console.log('Connecting to SSE for downloadId:', downloadId);
-    const eventSource = new EventSource(`${API_BASE_URL}/api/progress/${downloadId}`);
+function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
+    console.log('Connecting to SSE for downloadId:', downloadId, apiBase);
+    const eventSource = new EventSource(`${apiBase}/api/progress/${downloadId}`);
     
     eventSource.onmessage = (event) => {
         try {
@@ -376,14 +416,19 @@ function listenToProgressBackground(downloadId) {
                 if (window.progressInterval) {
                     clearInterval(window.progressInterval);
                 }
-                showSuccess(data.downloadUrl, data.filename);
+                showSuccess(data.downloadUrl, data.filename, apiBase);
             } else if (data.type === 'error') {
                 console.log('Download error:', data.message);
                 eventSource.close();
                 if (window.progressInterval) {
                     clearInterval(window.progressInterval);
                 }
-                showError(data.message || t('errorOccurred'));
+                const url = videoUrlInput.value.trim();
+                if (apiBase !== LOCAL_API_BASE && isYoutubeUrl(url) && isYoutubeBackendError(data.message)) {
+                    retryDownloadViaLocalhost(url, data.message);
+                    return;
+                }
+                showYoutubeDeployError(data.message);
             }
         } catch (err) {
             console.error('Error parsing SSE data:', err);
@@ -400,6 +445,45 @@ function listenToProgressBackground(downloadId) {
             showError(t('tryAgain'));
         }
     };
+}
+
+async function retryDownloadViaLocalhost(url, originalError) {
+    updateProgress(10, currentLang === 'ar' ? 'تجربة السيرفر المحلي...' : 'Trying local server...');
+    const localOk = await isLocalServerAvailable();
+    if (!localOk) {
+        showYoutubeDeployError(originalError);
+        return;
+    }
+
+    console.log('Falling back to local server:', LOCAL_API_BASE);
+    activeApiBase = LOCAL_API_BASE;
+    try {
+        const response = await fetch(`${LOCAL_API_BASE}/api/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+        const data = await response.json();
+        if (response.ok && data?.success && data?.downloadId) {
+            listenToProgressBackground(data.downloadId, LOCAL_API_BASE);
+            return;
+        }
+    } catch (err) {
+        console.error('Local fallback failed:', err);
+    }
+    showYoutubeDeployError(originalError);
+}
+
+function showYoutubeDeployError(message) {
+    if (isYoutubeBackendError(message) && API_BASE_URL === DEFAULT_PRODUCTION_API_BASE) {
+        showError(
+            currentLang === 'ar'
+                ? 'سيرفر Railway قديم. شغّل السيرفر محلياً (npm start) أو اعمل Redeploy على Railway.'
+                : 'Railway server is outdated. Run npm start locally or Redeploy on Railway.'
+        );
+        return;
+    }
+    showError(message || t('errorOccurred'));
 }
 
 console.log('Vitro API:', API_BASE_URL);
@@ -444,7 +528,7 @@ function startProcessing() {
     startFastAnimation();
 }
 
-function showSuccess(downloadUrl, filename) {
+function showSuccess(downloadUrl, filename, apiBase = activeApiBase) {
     downloadBtn.disabled = false;
     downloadBtn.textContent = currentLang === 'en' ? 'Download Video' : 'تحميل الفيديو';
     videoUrlInput.disabled = false;
@@ -466,7 +550,7 @@ function showSuccess(downloadUrl, filename) {
     
     // Check if downloadUrl exists and is valid
     if (downloadUrl) {
-        const fullUrl = downloadUrl.startsWith('http') ? downloadUrl : `${API_BASE_URL}${downloadUrl}`;
+        const fullUrl = downloadUrl.startsWith('http') ? downloadUrl : `${apiBase}${downloadUrl}`;
         downloadLink.href = fullUrl;
         if (filename) {
             downloadLink.download = filename;
