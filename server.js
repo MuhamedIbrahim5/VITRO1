@@ -41,13 +41,30 @@ const IS_CLOUD_HOST = Boolean(
     process.env.RENDER ||
     (!HAS_LOCAL_WINDOWS_FFMPEG && process.platform !== 'win32')
 );
-const DEPLOY_VERSION = '2026-05-21-youtube-auth-fix-v2';
+const DEPLOY_VERSION = '2026-05-21-instagram-fix';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const YOUTUBE_CLIENTS = IS_CLOUD_HOST
     ? ['android,web', 'android', 'ios', 'web', 'mweb', 'tv_embedded']
     : ['android', 'web', 'ios'];
 const YT_COOKIES_PATH = path.join(__dirname, 'youtube_cookies.txt');
+const IG_COOKIES_PATH = path.join(__dirname, 'cookies.txt');
 let youtubeCookiesReady = false;
+let instagramCookiesReady = false;
+
+async function initInstagramCookies() {
+    const b64 = process.env.INSTAGRAM_COOKIES_BASE64;
+    if (b64) {
+        await fs.writeFile(IG_COOKIES_PATH, Buffer.from(b64, 'base64'));
+        console.log('✓ Instagram cookies loaded from INSTAGRAM_COOKIES_BASE64');
+    }
+    instagramCookiesReady = await fileExists(IG_COOKIES_PATH);
+    if (instagramCookiesReady) {
+        const stats = await fs.stat(IG_COOKIES_PATH);
+        console.log(`✓ Instagram cookies ready (${stats.size} bytes)`);
+    } else if (IS_CLOUD_HOST) {
+        console.warn('⚠ No cookies.txt — Instagram downloads will fail on cloud');
+    }
+}
 
 async function initYoutubeCookies() {
     const b64 = process.env.YOUTUBE_COOKIES_BASE64;
@@ -74,6 +91,7 @@ function normalizeYoutubeUrl(url) {
 
 fs.mkdir(DOWNLOADS_DIR, { recursive: true }).catch(console.error);
 initYoutubeCookies().catch(console.error);
+initInstagramCookies().catch(console.error);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -82,6 +100,7 @@ app.get('/health', (req, res) => {
         version: DEPLOY_VERSION,
         cloud: IS_CLOUD_HOST,
         youtubeCookies: youtubeCookiesReady,
+        instagramCookies: instagramCookiesReady,
         timestamp: new Date().toISOString(),
         uptime: process.uptime()
     });
@@ -243,11 +262,15 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
 
         args.push('--merge-output-format', 'mp4');
     } else if (platform === 'instagram') {
-        const cookiesPath = path.join(__dirname, 'cookies.txt');
-        if (!(await fileExists(cookiesPath))) {
-            throw new Error('Instagram requires cookies.txt file');
+        if (!(await fileExists(IG_COOKIES_PATH))) {
+            throw new Error(
+                IS_CLOUD_HOST
+                    ? 'Instagram needs cookies on Railway. Set INSTAGRAM_COOKIES_BASE64 variable and redeploy.'
+                    : 'Instagram needs cookies.txt. Run export-instagram-cookies.bat then restart the server.'
+            );
         }
-        args.push('--cookies', cookiesPath);
+        args.push('--cookies', IG_COOKIES_PATH);
+        args.push('-f', 'best[ext=mp4]/bestvideo+bestaudio/best');
         args.push('--merge-output-format', 'mp4');
     } else if (platform === 'facebook') {
         const fbCookies = path.join(__dirname, 'www.facebook.com_cookies.txt');
@@ -317,7 +340,16 @@ function runYtDlp(args, downloadId) {
 
 async function finalizeDownload(outputPath, filename, platform, downloadId) {
     if (platform === 'instagram' || platform === 'facebook') {
-        await ensureCompatibleMp4(outputPath, downloadId);
+        try {
+            await ensureCompatibleMp4(outputPath, downloadId);
+        } catch (err) {
+            console.warn('Compatibility pass skipped, using original file:', err.message);
+            const info = await getMediaInfo(outputPath);
+            const hasVideo = info?.streams?.some((s) => s.codec_type === 'video');
+            if (!hasVideo) {
+                throw new Error('Downloaded file is not a valid video. Update Instagram cookies and try again.');
+            }
+        }
     }
 
     await fs.access(outputPath);
@@ -421,8 +453,18 @@ async function downloadWithProgress(url, platform, downloadId) {
 function getDownloadErrorMessage(errorText, code) {
     const text = String(errorText || '').replace(/\s+/g, ' ').trim();
 
+    if (/Instagram.*cookies|empty media response|not granting access|login required/i.test(text)) {
+        return IS_CLOUD_HOST
+            ? 'Instagram needs fresh cookies on Railway (INSTAGRAM_COOKIES_BASE64).'
+            : 'Instagram needs fresh cookies. Run export-instagram-cookies.bat and restart the server.';
+    }
+
+    if (/ffmpeg|ffprobe/i.test(text) && /version|Copyright|configuration/i.test(text)) {
+        return 'Video processing failed. Try again or update cookies for this platform.';
+    }
+
     if (/ffmpeg|ffprobe/i.test(text)) {
-        return 'ffmpeg is missing or not reachable. The local ffmpeg path has been configured; restart the server and try again.';
+        return 'ffmpeg is missing or not reachable. Restart the server and try again.';
     }
 
     if (/Sign in|cookies|authentication|not a bot|requires authentication/i.test(text)) {
@@ -465,6 +507,8 @@ async function ensureCompatibleMp4(filePath, downloadId) {
 
     const tempPath = filePath.replace(/\.mp4$/i, '.compatible.mp4');
     const args = [
+        '-hide_banner',
+        '-loglevel', 'error',
         '-y',
         '-i', filePath,
         '-map', '0:v:0',
@@ -490,6 +534,7 @@ async function ensureCompatibleMp4(filePath, downloadId) {
 
 async function getMediaInfo(filePath) {
     const result = await runProcess(FFPROBE_PATH, [
+        '-hide_banner',
         '-v', 'error',
         '-show_entries', 'stream=index,codec_type,codec_name,profile,width,height,r_frame_rate,avg_frame_rate,duration,nb_frames,pix_fmt',
         '-of', 'json',
@@ -523,7 +568,17 @@ function runProcess(command, args) {
 }
 
 function cleanProcessError(errorText) {
-    return String(errorText || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+    const lines = String(errorText || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const useful = lines.filter((l) =>
+        !/^ffmpeg version/i.test(l) &&
+        !/^ffprobe version/i.test(l) &&
+        !/^Copyright/i.test(l) &&
+        !/^built with/i.test(l) &&
+        !/^configuration:/i.test(l) &&
+        !/^libav/i.test(l)
+    );
+    const errLine = useful.find((l) => /error|invalid|failed|no such|denied/i.test(l)) || useful[useful.length - 1] || '';
+    return errLine.replace(/\s+/g, ' ').trim().slice(0, 220);
 }
 
 // Platform detection

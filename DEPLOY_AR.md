@@ -28,6 +28,14 @@ npm start
 5. تحقق: https://vitro1-production-be78.up.railway.app/health  
    يجب أن يظهر: `"version":"2026-05-21-youtube-auth-fix-v2"`
 
+### كوكيز Instagram (مطلوب)
+
+1. سجّل دخولك على Instagram في المتصفح
+2. شغّل `export-instagram-cookies.bat` (أو استخدم إضافة **Get cookies.txt LOCALLY**)
+3. محلي: يُنشأ `cookies.txt` — أعد تشغيل السيرفر
+4. Railway: `powershell -File scripts\export-railway-instagram-cookies.ps1`  
+   → انسخ إلى `INSTAGRAM_COOKIES_BASE64` → **Redeploy**
+
 ### كوكيز YouTube (اختياري)
 
 ```powershell
