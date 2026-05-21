@@ -28,6 +28,13 @@ npm start
 5. تحقق: https://vitro1-production-be78.up.railway.app/health  
    يجب أن يظهر: `"version":"2026-05-21-youtube-auth-fix-v2"`
 
+### كوكيز Facebook (مطلوب)
+
+1. سجّل دخولك على Facebook في المتصفح
+2. شغّل `export-facebook-cookies.bat`
+3. يُنشأ `www.facebook.com_cookies.txt` — أعد تشغيل السيرفر
+4. Railway: انسخ base64 إلى `FACEBOOK_COOKIES_BASE64` ثم Redeploy
+
 ### كوكيز Instagram (مطلوب)
 
 1. سجّل دخولك على Instagram في المتصفح

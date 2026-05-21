@@ -483,10 +483,27 @@ function updateProgress(progress, message) {
     }
 }
 
+const DOWNLOAD_TIMEOUT_MS = 4 * 60 * 1000;
+
 // Listen to SSE in background without showing slow progress
 function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
     console.log('Connecting to SSE for downloadId:', downloadId, apiBase);
     const eventSource = new EventSource(`${apiBase}/api/progress/${downloadId}`);
+    let finished = false;
+
+    const timeoutId = setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        eventSource.close();
+        if (window.progressInterval) {
+            clearInterval(window.progressInterval);
+        }
+        showError(
+            currentLang === 'ar'
+                ? 'انتهى الوقت. تأكد من كوكيز Facebook أو جرّب رابطاً آخر.'
+                : 'Timed out. Check Facebook cookies or try another link.'
+        );
+    }, DOWNLOAD_TIMEOUT_MS);
     
     eventSource.onmessage = (event) => {
         try {
@@ -509,6 +526,8 @@ function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
                 }
             } else if (data.type === 'complete') {
                 console.log('Download complete!', data);
+                finished = true;
+                clearTimeout(timeoutId);
                 eventSource.close();
                 // Stop fake animation
                 if (window.progressInterval) {
@@ -517,6 +536,8 @@ function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
                 showSuccess(data.downloadUrl, data.filename, apiBase);
             } else if (data.type === 'error') {
                 console.log('Download error:', data.message);
+                finished = true;
+                clearTimeout(timeoutId);
                 eventSource.close();
                 if (window.progressInterval) {
                     clearInterval(window.progressInterval);
@@ -539,7 +560,9 @@ function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
     
     eventSource.onerror = (error) => {
         console.error('SSE error:', error);
-        if (eventSource.readyState === EventSource.CLOSED) {
+        if (eventSource.readyState === EventSource.CLOSED && !finished) {
+            finished = true;
+            clearTimeout(timeoutId);
             eventSource.close();
             if (window.progressInterval) {
                 clearInterval(window.progressInterval);

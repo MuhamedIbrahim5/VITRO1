@@ -41,15 +41,18 @@ const IS_CLOUD_HOST = Boolean(
     process.env.RENDER ||
     (!HAS_LOCAL_WINDOWS_FFMPEG && process.platform !== 'win32')
 );
-const DEPLOY_VERSION = '2026-05-21-instagram-fix';
+const DEPLOY_VERSION = '2026-05-21-facebook-fix';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const YOUTUBE_CLIENTS = IS_CLOUD_HOST
     ? ['android,web', 'android', 'ios', 'web', 'mweb', 'tv_embedded']
     : ['android', 'web', 'ios'];
 const YT_COOKIES_PATH = path.join(__dirname, 'youtube_cookies.txt');
 const IG_COOKIES_PATH = path.join(__dirname, 'cookies.txt');
+const FB_COOKIES_PATH = path.join(__dirname, 'www.facebook.com_cookies.txt');
+const DOWNLOAD_TIMEOUT_MS = 4 * 60 * 1000;
 let youtubeCookiesReady = false;
 let instagramCookiesReady = false;
+let facebookCookiesReady = false;
 
 async function initInstagramCookies() {
     const b64 = process.env.INSTAGRAM_COOKIES_BASE64;
@@ -94,9 +97,58 @@ function normalizeYoutubeUrl(url) {
     return url;
 }
 
+function normalizeFacebookUrl(url) {
+    if (/facebook\.com\/share\/r\//i.test(url)) {
+        return url.split('?')[0];
+    }
+    return url;
+}
+
+async function initFacebookCookies() {
+    const b64 = process.env.FACEBOOK_COOKIES_BASE64;
+    if (b64) {
+        await fs.writeFile(FB_COOKIES_PATH, Buffer.from(b64, 'base64'));
+        console.log('✓ Facebook cookies loaded from FACEBOOK_COOKIES_BASE64');
+    }
+    facebookCookiesReady = await fileExists(FB_COOKIES_PATH);
+    if (facebookCookiesReady) {
+        const stats = await fs.stat(FB_COOKIES_PATH);
+        console.log(`✓ Facebook cookies ready (${stats.size} bytes)`);
+    } else if (IS_CLOUD_HOST) {
+        console.warn('⚠ No www.facebook.com_cookies.txt — Facebook downloads will fail on cloud');
+    }
+}
+
+async function validatePlatformRequirements(platform) {
+    if (platform === 'instagram') {
+        if (!(await fileExists(IG_COOKIES_PATH))) {
+            throw new Error(
+                IS_CLOUD_HOST
+                    ? 'Instagram needs cookies on Railway (INSTAGRAM_COOKIES_BASE64).'
+                    : 'Instagram needs cookies.txt. Export cookies while logged in, then restart the server.'
+            );
+        }
+        const cookieText = await fs.readFile(IG_COOKIES_PATH, 'utf8');
+        if (!/\bsessionid\b/i.test(cookieText)) {
+            throw new Error('Instagram cookies incomplete (missing sessionid). Export cookies again from instagram.com.');
+        }
+    }
+
+    if (platform === 'facebook') {
+        if (!(await fileExists(FB_COOKIES_PATH))) {
+            throw new Error(
+                IS_CLOUD_HOST
+                    ? 'Facebook needs cookies on Railway (FACEBOOK_COOKIES_BASE64).'
+                    : 'Facebook needs www.facebook.com_cookies.txt. Run export-facebook-cookies.bat then restart.'
+            );
+        }
+    }
+}
+
 fs.mkdir(DOWNLOADS_DIR, { recursive: true }).catch(console.error);
 initYoutubeCookies().catch(console.error);
 initInstagramCookies().catch(console.error);
+initFacebookCookies().catch(console.error);
 
 // Health check endpoint
 function getLanIp() {
@@ -112,6 +164,7 @@ app.get('/health', (req, res) => {
         cloud: IS_CLOUD_HOST,
         youtubeCookies: youtubeCookiesReady,
         instagramCookies: instagramCookiesReady,
+        facebookCookies: facebookCookiesReady,
         lanIp: getLanIp(),
         timestamp: new Date().toISOString(),
         uptime: process.uptime()
@@ -136,9 +189,10 @@ app.get('/api/progress/:downloadId', (req, res) => {
 
     // Store the response object for this download
     if (!activeDownloads.has(downloadId)) {
-        activeDownloads.set(downloadId, { clients: [] });
+        activeDownloads.set(downloadId, { clients: [], pending: [] });
     }
     activeDownloads.get(downloadId).clients.push(res);
+    flushPendingProgress(downloadId);
 
     // Clean up on client disconnect
     req.on('close', () => {
@@ -154,17 +208,43 @@ app.get('/api/progress/:downloadId', (req, res) => {
 
 // Helper function to send progress updates
 function sendProgress(downloadId, data) {
+    const message = `data: ${JSON.stringify(data)}\n\n`;
     const download = activeDownloads.get(downloadId);
-    if (download && download.clients) {
-        const message = `data: ${JSON.stringify(data)}\n\n`;
-        download.clients.forEach(client => {
+
+    if (!download) {
+        activeDownloads.set(downloadId, { clients: [], pending: [message] });
+        return;
+    }
+
+    if (!download.clients || download.clients.length === 0) {
+        download.pending = download.pending || [];
+        download.pending.push(message);
+        return;
+    }
+
+    download.clients.forEach((client) => {
+        try {
+            client.write(message);
+        } catch (error) {
+            console.error('Error sending progress:', error);
+        }
+    });
+}
+
+function flushPendingProgress(downloadId) {
+    const download = activeDownloads.get(downloadId);
+    if (!download?.pending?.length || !download.clients?.length) return;
+
+    download.pending.forEach((message) => {
+        download.clients.forEach((client) => {
             try {
                 client.write(message);
             } catch (error) {
-                console.error('Error sending progress:', error);
+                console.error('Error flushing progress:', error);
             }
         });
-    }
+    });
+    download.pending = [];
 }
 
 // Main download endpoint
@@ -192,6 +272,12 @@ app.post('/api/download', async (req, res) => {
                 console.log('📝 Normalized YouTube URL:', videoUrl);
             }
         }
+        if (/facebook\.com|fb\.watch/i.test(url)) {
+            videoUrl = normalizeFacebookUrl(url);
+            if (videoUrl !== url) {
+                console.log('📝 Normalized Facebook URL:', videoUrl);
+            }
+        }
 
         const platform = detectPlatform(videoUrl);
         console.log('🎯 Platform detected:', platform);
@@ -202,6 +288,17 @@ app.post('/api/download', async (req, res) => {
                 error: 'Platform not supported. Supported: TikTok, Instagram, YouTube, Facebook'
             });
         }
+
+        try {
+            await validatePlatformRequirements(platform);
+        } catch (validationError) {
+            return res.status(400).json({
+                success: false,
+                error: validationError.message
+            });
+        }
+
+        activeDownloads.set(downloadId, { clients: [], pending: [] });
 
         // Return download ID immediately
         res.json({
@@ -274,46 +371,36 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
 
         args.push('--merge-output-format', 'mp4');
     } else if (platform === 'instagram') {
-        if (!(await fileExists(IG_COOKIES_PATH))) {
-            throw new Error(
-                IS_CLOUD_HOST
-                    ? 'Instagram needs cookies on Railway. Set INSTAGRAM_COOKIES_BASE64 variable and redeploy.'
-                    : 'Instagram needs cookies.txt. Run export-instagram-cookies.bat then restart the server.'
-            );
-        }
-        const cookieText = await fs.readFile(IG_COOKIES_PATH, 'utf8');
-        if (!/\bsessionid\b/i.test(cookieText)) {
-            throw new Error(
-                'Instagram cookies are incomplete (missing sessionid). Log in to Instagram in your browser, export cookies again, then restart.'
-            );
-        }
         args.push('--cookies', IG_COOKIES_PATH);
         args.push('-f', 'best[ext=mp4]/bestvideo+bestaudio/best');
         args.push('--merge-output-format', 'mp4');
     } else if (platform === 'facebook') {
-        const fbCookies = path.join(__dirname, 'www.facebook.com_cookies.txt');
-        if (!(await fileExists(fbCookies))) {
-            throw new Error('Facebook requires cookies file');
-        }
-        args.push('--cookies', fbCookies);
-        args.push('-f', 'best[ext=mp4][vcodec*=avc1][acodec!=none]/best[ext=mp4][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
+        args.push('--cookies', FB_COOKIES_PATH);
+        args.push('-f', 'best[ext=mp4]/best/bestvideo+bestaudio/best');
         args.push('--merge-output-format', 'mp4');
+        args.push('--socket-timeout', '30');
+        args.push('--retries', '5');
     }
 
     args.push('-o', outputPath, url);
     return args;
 }
 
-function runYtDlp(args, downloadId) {
+function runYtDlp(args, downloadId, timeoutMs = DOWNLOAD_TIMEOUT_MS) {
     return new Promise((resolve) => {
         console.log(`🔧 Command: yt-dlp ${args.join(' ')}`);
 
         const proc = spawn('yt-dlp', args, { shell: false });
         let lastProgress = 0;
         let lastError = '';
+        let timedOut = false;
 
-        proc.stdout.on('data', (data) => {
-            const output = data.toString();
+        const timer = setTimeout(() => {
+            timedOut = true;
+            proc.kill('SIGKILL');
+        }, timeoutMs);
+
+        const handleOutput = (output) => {
             console.log('yt-dlp:', output);
 
             const progressMatch = output.match(/\[download\]\s+(\d+\.?\d*)%/);
@@ -329,6 +416,14 @@ function runYtDlp(args, downloadId) {
                 }
             }
 
+            if (/\[facebook\]|\[Instagram\]|\[Merger\]|Merging|Extracting/i.test(output)) {
+                sendProgress(downloadId, {
+                    type: 'progress',
+                    progress: Math.max(lastProgress, 15),
+                    message: 'Processing video...'
+                });
+            }
+
             if (output.includes('[Merger]') || output.includes('Merging')) {
                 sendProgress(downloadId, {
                     type: 'progress',
@@ -336,20 +431,28 @@ function runYtDlp(args, downloadId) {
                     message: 'Merging video and audio...'
                 });
             }
-        });
+        };
 
+        proc.stdout.on('data', (data) => handleOutput(data.toString()));
         proc.stderr.on('data', (data) => {
             const errorMsg = data.toString();
             lastError += errorMsg;
             console.error('yt-dlp stderr:', errorMsg);
+            handleOutput(errorMsg);
         });
 
         proc.on('close', (code) => {
+            clearTimeout(timer);
             console.log(`yt-dlp process exited with code: ${code}`);
+            if (timedOut) {
+                resolve({ code: 1, lastError: 'Download timed out. Check cookies or try again.' });
+                return;
+            }
             resolve({ code, lastError });
         });
 
         proc.on('error', (error) => {
+            clearTimeout(timer);
             console.error('yt-dlp spawn error:', error);
             resolve({ code: 1, lastError: error.message });
         });
@@ -357,7 +460,7 @@ function runYtDlp(args, downloadId) {
 }
 
 async function finalizeDownload(outputPath, filename, platform, downloadId) {
-    if (platform === 'instagram' || platform === 'facebook') {
+    if (platform === 'instagram') {
         try {
             await ensureCompatibleMp4(outputPath, downloadId);
         } catch (err) {
@@ -470,6 +573,12 @@ async function downloadWithProgress(url, platform, downloadId) {
 
 function getDownloadErrorMessage(errorText, code) {
     const text = String(errorText || '').replace(/\s+/g, ' ').trim();
+
+    if (/facebook.*cookies|login required|You must log in/i.test(text)) {
+        return IS_CLOUD_HOST
+            ? 'Facebook needs cookies on Railway (FACEBOOK_COOKIES_BASE64).'
+            : 'Facebook needs www.facebook.com_cookies.txt. Run export-facebook-cookies.bat and restart.';
+    }
 
     if (/Instagram.*cookies|empty media response|not granting access|login required/i.test(text)) {
         return IS_CLOUD_HOST
