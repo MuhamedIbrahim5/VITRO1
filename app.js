@@ -124,11 +124,15 @@ const configuredApiBase = normalizeApiBase(
 const hostname = window.location.hostname;
 const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
 const isPrivateLan = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(hostname);
+
+// Default to Railway production URL for Firebase hosting
 const API_BASE_URL = configuredApiBase || (
     isLocalHost
         ? 'http://localhost:3001'
         : isPrivateLan
             ? window.location.origin
+            : 'https://vitro1-production-be78.up.railway.app'
+);
             : DEFAULT_PRODUCTION_API_BASE
 );
 
