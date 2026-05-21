@@ -283,6 +283,14 @@ const progressContainer = document.getElementById('progressContainer');
 const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
 
+function updateProgress(progress, message) {
+    const pct = Math.min(100, Math.max(0, Number(progress) || 0));
+    progressFill.style.width = `${pct}%`;
+    if (message) {
+        progressText.textContent = message;
+    }
+}
+
 // Translations for dynamic messages
 const translations = {
     en: {
@@ -472,14 +480,6 @@ async function handleDownload() {
     } catch (error) {
         console.error('Download error:', error);
         showError(t('tryAgain'));
-    }
-}
-
-function updateProgress(progress, message) {
-    const pct = Math.min(100, Math.max(0, Number(progress) || 0));
-    progressFill.style.width = `${pct}%`;
-    if (message) {
-        progressText.textContent = message;
     }
 }
 
