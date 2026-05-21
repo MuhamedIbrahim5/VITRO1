@@ -10,7 +10,7 @@
 ```json
 {
   "status": "ok",
-  "version": "2026-05-21-force-rebuild-03",
+  "version": "2026-05-21-youtube-fix",
   "cloud": true,
   "youtubeCookies": true,
   "instagramCookies": true,
