@@ -269,6 +269,12 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
                     : 'Instagram needs cookies.txt. Run export-instagram-cookies.bat then restart the server.'
             );
         }
+        const cookieText = await fs.readFile(IG_COOKIES_PATH, 'utf8');
+        if (!/\bsessionid\b/i.test(cookieText)) {
+            throw new Error(
+                'Instagram cookies are incomplete (missing sessionid). Log in to Instagram in your browser, export cookies again, then restart.'
+            );
+        }
         args.push('--cookies', IG_COOKIES_PATH);
         args.push('-f', 'best[ext=mp4]/bestvideo+bestaudio/best');
         args.push('--merge-output-format', 'mp4');
