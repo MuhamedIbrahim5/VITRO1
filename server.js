@@ -41,7 +41,7 @@ const IS_CLOUD_HOST = Boolean(
     process.env.RENDER ||
     (!HAS_LOCAL_WINDOWS_FFMPEG && process.platform !== 'win32')
 );
-const DEPLOY_VERSION = '2026-05-21-app-js-fix';
+const DEPLOY_VERSION = '2026-05-21-force-rebuild-03';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const YOUTUBE_CLIENTS = IS_CLOUD_HOST
     ? ['android,web', 'android', 'ios', 'web', 'mweb', 'tv_embedded']
