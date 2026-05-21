@@ -5,7 +5,10 @@
     "main": "server.js",
     "scripts": {
         "start": "node server.js",
-        "dev": "nodemon server.js"
+        "dev": "nodemon server.js",
+        "sync": "node scripts/sync-public.js",
+        "predeploy:firebase": "node scripts/sync-public.js",
+        "deploy:firebase": "firebase deploy --only hosting"
     },
     "keywords": [
         "tiktok",

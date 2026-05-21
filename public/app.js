@@ -125,14 +125,12 @@ const hostname = window.location.hostname;
 const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
 const isPrivateLan = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(hostname);
 
-// Default to Railway production URL for Firebase hosting
+// Default to Railway production URL for Firebase / GitHub Pages hosting
 const API_BASE_URL = configuredApiBase || (
     isLocalHost
         ? 'http://localhost:3001'
         : isPrivateLan
             ? window.location.origin
-            : 'https://vitro1-production-be78.up.railway.app'
-);
             : DEFAULT_PRODUCTION_API_BASE
 );
 
@@ -311,7 +309,9 @@ async function handleDownload() {
             console.error('Non-JSON response preview:', rawText.slice(0, 180));
 
             if (response.status === 404 && API_BASE_URL === window.location.origin) {
-                showError('Backend API is not connected. Ø®Ø¯Ù…Ø© Ø§Ù„ØªØ­Ù…ÙŠÙ„ ØºÙŠØ± Ù…ØªØµÙ„Ø©.');
+                showError(currentLang === 'ar'
+                    ? 'خدمة التحميل غير متصلة. تأكد أن السيرفر يعمل.'
+                    : 'Download service is not connected. Make sure the server is running.');
                 return;
             }
 
@@ -334,6 +334,14 @@ async function handleDownload() {
     } catch (error) {
         console.error('Download error:', error);
         showError(t('tryAgain'));
+    }
+}
+
+function updateProgress(progress, message) {
+    const pct = Math.min(100, Math.max(0, Number(progress) || 0));
+    progressFill.style.width = `${pct}%`;
+    if (message) {
+        progressText.textContent = message;
     }
 }
 
@@ -384,13 +392,17 @@ function listenToProgressBackground(downloadId) {
     
     eventSource.onerror = (error) => {
         console.error('SSE error:', error);
-        eventSource.close();
-        if (window.progressInterval) {
-            clearInterval(window.progressInterval);
+        if (eventSource.readyState === EventSource.CLOSED) {
+            eventSource.close();
+            if (window.progressInterval) {
+                clearInterval(window.progressInterval);
+            }
+            showError(t('tryAgain'));
         }
-        showError(t('tryAgain'));
     };
 }
+
+console.log('Vitro API:', API_BASE_URL);
 
 // Fast fake animation
 function startFastAnimation() {

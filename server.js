@@ -35,9 +35,18 @@ const HAS_LOCAL_WINDOWS_FFMPEG =
 const FFMPEG_DIR = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFMPEG_DIR : null;
 const FFMPEG_PATH = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFMPEG_EXE : 'ffmpeg';
 const FFPROBE_PATH = HAS_LOCAL_WINDOWS_FFMPEG ? LOCAL_FFPROBE_EXE : 'ffprobe';
-const IS_CLOUD_HOST = !HAS_LOCAL_WINDOWS_FFMPEG || Boolean(process.env.RAILWAY_ENVIRONMENT);
-const DEPLOY_VERSION = '2026-05-21-youtube-cloud-fix';
+const IS_CLOUD_HOST = Boolean(
+    process.env.RAILWAY_ENVIRONMENT ||
+    process.env.RAILWAY_SERVICE_ID ||
+    process.env.RENDER ||
+    (!HAS_LOCAL_WINDOWS_FFMPEG && process.platform !== 'win32')
+);
+const DEPLOY_VERSION = '2026-05-21-full-deploy';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const YOUTUBE_CLIENTS = IS_CLOUD_HOST
+    ? ['android', 'ios', 'web', 'mweb', 'tv_embedded']
+    : ['android', 'web', 'ios'];
+const YT_COOKIES_PATH = path.join(__dirname, 'youtube_cookies.txt');
 fs.mkdir(DOWNLOADS_DIR, { recursive: true }).catch(console.error);
 
 // Health check endpoint
@@ -161,7 +170,11 @@ async function fileExists(filePath) {
 }
 
 async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
-    const { useYoutubeCookies = true, cloudYoutubeMode = false } = options;
+    const {
+        useYoutubeCookies = false,
+        cloudYoutubeMode = false,
+        youtubeClient = 'android'
+    } = options;
     const args = ['--newline', '--no-warnings', '--no-playlist'];
 
     if (FFMPEG_DIR) {
@@ -170,18 +183,10 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
 
     if (platform === 'youtube') {
         args.push('--user-agent', YT_USER_AGENT);
-        
-        // Try android client first (most reliable)
-        args.push('--extractor-args', 'youtube:player_client=android');
-        
-        // Skip unavailable fragments
+        args.push('--extractor-args', `youtube:player_client=${youtubeClient}`);
         args.push('--skip-unavailable-fragments');
-        
-        // Add retries
         args.push('--retries', '10');
         args.push('--fragment-retries', '10');
-        
-        // Add referer
         args.push('--add-header', 'Referer:https://www.youtube.com/');
 
         if (IS_CLOUD_HOST) {
@@ -189,15 +194,10 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
             args.push('--js-runtimes', `deno:/usr/local/bin/deno,node:${process.execPath}`);
         }
 
-        // Try WITHOUT cookies first (android client doesn't need them)
-        if (useYoutubeCookies && !IS_CLOUD_HOST) {
-            const ytCookies = path.join(__dirname, 'youtube_cookies.txt');
-            if (await fileExists(ytCookies)) {
-                const stats = await fs.stat(ytCookies);
-                console.log(`✓ Found YouTube cookies file (${stats.size} bytes) - but trying without first`);
-                // Don't use cookies with android client
-                // args.push('--cookies', ytCookies);
-            }
+        if (useYoutubeCookies && (await fileExists(YT_COOKIES_PATH))) {
+            const stats = await fs.stat(YT_COOKIES_PATH);
+            console.log(`✓ Using YouTube cookies (${stats.size} bytes)`);
+            args.push('--cookies', YT_COOKIES_PATH);
         }
 
         if (cloudYoutubeMode || IS_CLOUD_HOST) {
@@ -302,6 +302,46 @@ async function finalizeDownload(outputPath, filename, platform, downloadId) {
     });
 }
 
+function shouldRetryYoutube(errorText) {
+    const text = String(errorText || '');
+    return /Sign in|cookies|authentication|not a bot|403|429|confirm you|bot/i.test(text) ||
+        /Requested format is not available|Unable to extract|player response/i.test(text);
+}
+
+async function runYoutubeDownload(url, outputPath, downloadId) {
+    let lastResult = { code: 1, lastError: '' };
+
+    for (let i = 0; i < YOUTUBE_CLIENTS.length; i++) {
+        const client = YOUTUBE_CLIENTS[i];
+        const useCookies = i > 0 || (!IS_CLOUD_HOST && (await fileExists(YT_COOKIES_PATH)));
+
+        sendProgress(downloadId, {
+            type: 'status',
+            message: i === 0 ? 'Starting download...' : `Retrying (${client})...`,
+            progress: 0
+        });
+
+        const args = await buildYtDlpArgs(url, 'youtube', outputPath, {
+            youtubeClient: client,
+            useYoutubeCookies: useCookies,
+            cloudYoutubeMode: IS_CLOUD_HOST
+        });
+
+        lastResult = await runYtDlp(args, downloadId);
+        if (lastResult.code === 0) {
+            return lastResult;
+        }
+
+        console.log(`⚠ YouTube client "${client}" failed, exit ${lastResult.code}`);
+        if (!shouldRetryYoutube(lastResult.lastError) && i < YOUTUBE_CLIENTS.length - 1) {
+            const fatal = /Video unavailable|Private video|This video is unavailable|age.restricted/i.test(lastResult.lastError);
+            if (fatal) break;
+        }
+    }
+
+    return lastResult;
+}
+
 // Download function with real-time progress tracking
 async function downloadWithProgress(url, platform, downloadId) {
     const filename = `${platform}_${downloadId}.mp4`;
@@ -310,29 +350,12 @@ async function downloadWithProgress(url, platform, downloadId) {
     try {
         sendProgress(downloadId, { type: 'status', message: 'Starting download...', progress: 0 });
 
-        let args = await buildYtDlpArgs(url, platform, outputPath, {
-            useYoutubeCookies: !IS_CLOUD_HOST,
-            cloudYoutubeMode: IS_CLOUD_HOST
-        });
-
-        let result = await runYtDlp(args, downloadId);
-
-        if (
-            platform === 'youtube' &&
-            result.code !== 0 &&
-            isYoutubeAuthError(result.lastError) &&
-            args.includes('--cookies')
-        ) {
-            console.log('⚠ YouTube auth failed with cookies, retrying without cookies...');
-            sendProgress(downloadId, {
-                type: 'status',
-                message: 'Retrying download...',
-                progress: 0
-            });
-
-            args = await buildYtDlpArgs(url, platform, outputPath, {
-                useYoutubeCookies: false,
-                cloudYoutubeMode: true
+        let result;
+        if (platform === 'youtube') {
+            result = await runYoutubeDownload(url, outputPath, downloadId);
+        } else {
+            const args = await buildYtDlpArgs(url, platform, outputPath, {
+                cloudYoutubeMode: IS_CLOUD_HOST
             });
             result = await runYtDlp(args, downloadId);
         }
