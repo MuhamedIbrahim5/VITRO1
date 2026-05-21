@@ -170,7 +170,11 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
 
     if (platform === 'youtube') {
         args.push('--user-agent', YT_USER_AGENT);
-        args.push('--extractor-args', 'youtube:player_client=tv,android,web');
+        // Try multiple player clients for better success rate
+        args.push('--extractor-args', 'youtube:player_client=android,tv,web,ios');
+        // Add more options to bypass bot detection
+        args.push('--extractor-retries', '3');
+        args.push('--fragment-retries', '3');
 
         if (IS_CLOUD_HOST) {
             args.push('--remote-components', 'ejs:github');
@@ -183,6 +187,8 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
                 const stats = await fs.stat(ytCookies);
                 console.log(`✓ Found YouTube cookies file (${stats.size} bytes)`);
                 args.push('--cookies', ytCookies);
+            } else {
+                console.log('⚠️ No YouTube cookies found - may fail on some videos');
             }
         }
 
