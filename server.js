@@ -170,25 +170,33 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
 
     if (platform === 'youtube') {
         args.push('--user-agent', YT_USER_AGENT);
-        // Try multiple player clients for better success rate
-        args.push('--extractor-args', 'youtube:player_client=android,tv,web,ios');
-        // Add more options to bypass bot detection
-        args.push('--extractor-retries', '3');
-        args.push('--fragment-retries', '3');
+        
+        // Try android client first (most reliable)
+        args.push('--extractor-args', 'youtube:player_client=android');
+        
+        // Skip unavailable fragments
+        args.push('--skip-unavailable-fragments');
+        
+        // Add retries
+        args.push('--retries', '10');
+        args.push('--fragment-retries', '10');
+        
+        // Add referer
+        args.push('--add-header', 'Referer:https://www.youtube.com/');
 
         if (IS_CLOUD_HOST) {
             args.push('--remote-components', 'ejs:github');
             args.push('--js-runtimes', `deno:/usr/local/bin/deno,node:${process.execPath}`);
         }
 
-        if (useYoutubeCookies) {
+        // Try WITHOUT cookies first (android client doesn't need them)
+        if (useYoutubeCookies && !IS_CLOUD_HOST) {
             const ytCookies = path.join(__dirname, 'youtube_cookies.txt');
             if (await fileExists(ytCookies)) {
                 const stats = await fs.stat(ytCookies);
-                console.log(`✓ Found YouTube cookies file (${stats.size} bytes)`);
-                args.push('--cookies', ytCookies);
-            } else {
-                console.log('⚠️ No YouTube cookies found - may fail on some videos');
+                console.log(`✓ Found YouTube cookies file (${stats.size} bytes) - but trying without first`);
+                // Don't use cookies with android client
+                // args.push('--cookies', ytCookies);
             }
         }
 
