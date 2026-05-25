@@ -45,8 +45,8 @@ const DEPLOY_VERSION = '2026-05-25-social-720-fix';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 // Try without cookies first (android works best); cookies only on auth retry
 const YOUTUBE_CLIENTS = IS_CLOUD_HOST
-    ? ['android', 'ios', 'web', 'mweb']
-    : ['android', 'web', 'ios'];
+    ? ['android_vr', 'android', 'ios', 'web', 'mweb']
+    : ['android_vr', 'android', 'web', 'ios'];
 const YT_COOKIES_PATH = path.join(__dirname, 'youtube_cookies.txt');
 const IG_COOKIES_PATH = path.join(__dirname, 'cookies.txt');
 const FB_COOKIES_PATH = path.join(__dirname, 'www.facebook.com_cookies.txt');

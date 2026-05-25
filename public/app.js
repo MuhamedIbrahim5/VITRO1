@@ -140,6 +140,10 @@ function isInstagramUrl(url) {
     return /instagram\.com/i.test(url);
 }
 
+function isFacebookUrl(url) {
+    return /facebook\.com|fb\.watch/i.test(url);
+}
+
 function isYoutubeUrl(url) {
     return /youtube\.com|youtu\.be/i.test(url);
 }
@@ -165,7 +169,7 @@ function getLanApiCandidates() {
 }
 
 async function isApiAvailable(apiBase, options = {}) {
-    const { needInstagram = false } = options;
+    const { needInstagram = false, needFacebook = false } = options;
     try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 2500);
@@ -175,6 +179,7 @@ async function isApiAvailable(apiBase, options = {}) {
         const data = await res.json();
         if (!data.version) return false;
         if (needInstagram && !data.instagramCookies) return false;
+        if (needFacebook && !data.facebookCookies) return false;
         return true;
     } catch {
         return false;
@@ -185,11 +190,11 @@ async function isLocalServerAvailable() {
     return isApiAvailable(LOCAL_API_BASE);
 }
 
-async function findLanBackend(needInstagram = false) {
+async function findLanBackend(options = {}) {
     if (isLocalHost || isPrivateLan) return null;
 
     for (const base of getLanApiCandidates()) {
-        if (await isApiAvailable(base, { needInstagram })) {
+        if (await isApiAvailable(base, options)) {
             localStorage.setItem('VITRO_LAN_API', base);
             console.log('Using LAN backend:', base);
             return base;
@@ -200,9 +205,11 @@ async function findLanBackend(needInstagram = false) {
 
 async function resolveApiBase(url) {
     if (isLocalHost || isPrivateLan) return API_BASE_URL;
-    if (!isInstagramUrl(url)) return API_BASE_URL;
+    const needInstagram = isInstagramUrl(url);
+    const needFacebook = isFacebookUrl(url);
+    if (!needInstagram && !needFacebook) return API_BASE_URL;
 
-    const lanApi = await findLanBackend(true);
+    const lanApi = await findLanBackend({ needInstagram, needFacebook });
     if (lanApi) return lanApi;
 
     return API_BASE_URL;
@@ -242,7 +249,7 @@ function setupMobileLanHint() {
         if (!ip) return;
         const base = `http://${ip}:3001`;
         localStorage.setItem('VITRO_LAN_API', base);
-        const ok = await isApiAvailable(base, { needInstagram: true });
+        const ok = await isApiAvailable(base);
         showError(ok
             ? (currentLang === 'ar' ? '✓ تم ربط اللابتوب. جرّب التحميل الآن.' : '✓ Laptop linked. Try download now.')
             : (currentLang === 'ar' ? 'لم يتم العثور على السيرفر. تأكد أن npm start شغال على اللابتوب.' : 'Server not found. Ensure npm start is running on laptop.'));
@@ -547,7 +554,7 @@ function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
                     retryDownloadViaLocalhost(url, data.message);
                     return;
                 }
-                if (isInstagramUrl(url) && apiBase === DEFAULT_PRODUCTION_API_BASE) {
+                if ((isInstagramUrl(url) || isFacebookUrl(url)) && apiBase === DEFAULT_PRODUCTION_API_BASE) {
                     retryDownloadViaLan(url, data.message);
                     return;
                 }
@@ -574,7 +581,10 @@ function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
 
 async function retryDownloadViaLan(url, originalError) {
     updateProgress(15, currentLang === 'ar' ? 'الاتصال بسيرفر اللابتوب...' : 'Connecting to laptop server...');
-    const lanApi = await findLanBackend(true);
+    const lanApi = await findLanBackend({
+        needInstagram: isInstagramUrl(url),
+        needFacebook: isFacebookUrl(url)
+    });
     if (!lanApi) {
         showError(
             currentLang === 'ar'
