@@ -41,7 +41,7 @@ const IS_CLOUD_HOST = Boolean(
     process.env.RENDER ||
     (!HAS_LOCAL_WINDOWS_FFMPEG && process.platform !== 'win32')
 );
-const DEPLOY_VERSION = '2026-05-21-youtube-fix';
+const DEPLOY_VERSION = '2026-05-25-social-720-fix';
 const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 // Try without cookies first (android works best); cookies only on auth retry
 const YOUTUBE_CLIENTS = IS_CLOUD_HOST
@@ -51,11 +51,95 @@ const YT_COOKIES_PATH = path.join(__dirname, 'youtube_cookies.txt');
 const IG_COOKIES_PATH = path.join(__dirname, 'cookies.txt');
 const FB_COOKIES_PATH = path.join(__dirname, 'www.facebook.com_cookies.txt');
 const DOWNLOAD_TIMEOUT_MS = 4 * 60 * 1000;
+const TARGET_MAX_HEIGHT = 720;
+const PREFERRED_720_FORMAT = [
+    'bv*[height<=720][ext=mp4]+ba[ext=m4a]',
+    'bv*[height<=720]+ba',
+    'b[height<=720][ext=mp4]',
+    'b[height<=720]',
+    'best[ext=mp4]',
+    'best'
+].join('/');
+const PLATFORM_REFERERS = {
+    youtube: 'https://www.youtube.com/',
+    tiktok: 'https://www.tiktok.com/',
+    instagram: 'https://www.instagram.com/',
+    facebook: 'https://www.facebook.com/'
+};
 let youtubeCookiesReady = false;
 let instagramCookiesReady = false;
 let facebookCookiesReady = false;
+let cookieStatus = {
+    youtube: 'not checked',
+    instagram: 'not checked',
+    facebook: 'not checked'
+};
+
+async function loadCookieFileFromEnv(envName, filePath, label) {
+    const b64 = process.env[envName];
+    if (!b64) return;
+
+    await fs.writeFile(filePath, Buffer.from(b64, 'base64'));
+    console.log(`${label} cookies loaded from ${envName}`);
+}
+
+async function readCookieNames(filePath) {
+    if (!(await fileExists(filePath))) {
+        return new Set();
+    }
+
+    const text = await fs.readFile(filePath, 'utf8');
+    const names = new Set();
+
+    for (const rawLine of text.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if (line.startsWith('#') && !line.startsWith('#HttpOnly_')) continue;
+
+        const parts = line.split('\t');
+        if (parts.length >= 7) {
+            names.add(parts[5].toLowerCase());
+        }
+    }
+
+    return names;
+}
+
+async function refreshCookieReadiness(log = false) {
+    const youtubeNames = await readCookieNames(YT_COOKIES_PATH);
+    const instagramNames = await readCookieNames(IG_COOKIES_PATH);
+    const facebookNames = await readCookieNames(FB_COOKIES_PATH);
+
+    youtubeCookiesReady = youtubeNames.size > 0;
+    instagramCookiesReady = instagramNames.has('sessionid');
+    facebookCookiesReady = facebookNames.has('c_user') && facebookNames.has('xs');
+
+    cookieStatus = {
+        youtube: youtubeCookiesReady ? `${youtubeNames.size} cookies` : 'missing',
+        instagram: instagramCookiesReady
+            ? `${instagramNames.size} cookies with sessionid`
+            : instagramNames.size
+                ? `${instagramNames.size} cookies, missing sessionid`
+                : 'missing',
+        facebook: facebookCookiesReady
+            ? `${facebookNames.size} cookies with c_user/xs`
+            : facebookNames.size
+                ? `${facebookNames.size} cookies, missing c_user or xs`
+                : 'missing'
+    };
+
+    if (log) {
+        console.log(`YouTube cookies: ${cookieStatus.youtube}`);
+        console.log(`Instagram cookies: ${cookieStatus.instagram}`);
+        console.log(`Facebook cookies: ${cookieStatus.facebook}`);
+    }
+}
 
 async function initInstagramCookies() {
+    await loadCookieFileFromEnv('INSTAGRAM_COOKIES_BASE64', IG_COOKIES_PATH, 'Instagram');
+    await refreshCookieReadiness(true);
+    return;
+
     const b64 = process.env.INSTAGRAM_COOKIES_BASE64;
     if (b64) {
         await fs.writeFile(IG_COOKIES_PATH, Buffer.from(b64, 'base64'));
@@ -76,6 +160,10 @@ async function initInstagramCookies() {
 }
 
 async function initYoutubeCookies() {
+    await loadCookieFileFromEnv('YOUTUBE_COOKIES_BASE64', YT_COOKIES_PATH, 'YouTube');
+    await refreshCookieReadiness(true);
+    return;
+
     const b64 = process.env.YOUTUBE_COOKIES_BASE64;
     if (b64) {
         await fs.writeFile(YT_COOKIES_PATH, Buffer.from(b64, 'base64'));
@@ -112,6 +200,10 @@ function normalizeInstagramUrl(url) {
 }
 
 async function initFacebookCookies() {
+    await loadCookieFileFromEnv('FACEBOOK_COOKIES_BASE64', FB_COOKIES_PATH, 'Facebook');
+    await refreshCookieReadiness(true);
+    return;
+
     const b64 = process.env.FACEBOOK_COOKIES_BASE64;
     if (b64) {
         await fs.writeFile(FB_COOKIES_PATH, Buffer.from(b64, 'base64'));
@@ -127,6 +219,18 @@ async function initFacebookCookies() {
 }
 
 async function validatePlatformRequirements(platform) {
+    await refreshCookieReadiness();
+
+    if (platform === 'instagram' && !instagramCookiesReady) {
+        console.warn(`Instagram cookies are not ready (${cookieStatus.instagram}); trying public download first.`);
+    }
+
+    if (platform === 'facebook' && !facebookCookiesReady) {
+        console.warn(`Facebook cookies are not ready (${cookieStatus.facebook}); trying public download first.`);
+    }
+
+    return;
+
     if (platform === 'instagram') {
         if (!(await fileExists(IG_COOKIES_PATH))) {
             throw new Error(
@@ -172,6 +276,8 @@ app.get('/health', (req, res) => {
         youtubeCookies: youtubeCookiesReady,
         instagramCookies: instagramCookiesReady,
         facebookCookies: facebookCookiesReady,
+        cookieStatus,
+        maxHeight: TARGET_MAX_HEIGHT,
         lanIp: getLanIp(),
         timestamp: new Date().toISOString(),
         uptime: process.uptime()
@@ -348,6 +454,7 @@ async function fileExists(filePath) {
 async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
     const {
         useYoutubeCookies = false,
+        useCookies = false,
         cloudYoutubeMode = false,
         youtubeClient = 'android'
     } = options;
@@ -363,7 +470,7 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
         args.push('--skip-unavailable-fragments');
         args.push('--retries', '10');
         args.push('--fragment-retries', '10');
-        args.push('--add-header', 'Referer:https://www.youtube.com/');
+        args.push('--add-header', `Referer:${PLATFORM_REFERERS.youtube}`);
 
         if (IS_CLOUD_HOST) {
             args.push('--remote-components', 'ejs:github');
@@ -376,23 +483,43 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
             args.push('--cookies', YT_COOKIES_PATH);
         }
 
-        if (cloudYoutubeMode || IS_CLOUD_HOST) {
-            args.push('-f', 'best[ext=mp4]/bestvideo+bestaudio/best');
-        } else {
-            args.push('-f', 'best[ext=mp4][vcodec!=none][acodec!=none]/best[height<=720][vcodec!=none][acodec!=none]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best');
-        }
+        args.push('-f', PREFERRED_720_FORMAT);
 
         args.push('--merge-output-format', 'mp4');
+    } else if (platform === 'tiktok') {
+        args.push('--user-agent', YT_USER_AGENT);
+        args.push('--add-header', `Referer:${PLATFORM_REFERERS.tiktok}`);
+        args.push('--socket-timeout', '30');
+        args.push('--retries', '5');
+        args.push('--fragment-retries', '5');
+        args.push('-f', PREFERRED_720_FORMAT);
+        args.push('--merge-output-format', 'mp4');
     } else if (platform === 'instagram') {
-        args.push('--cookies', IG_COOKIES_PATH);
-        args.push('-f', 'best[ext=mp4]/bestvideo+bestaudio/best');
+        args.push('--user-agent', YT_USER_AGENT);
+        args.push('--add-header', `Referer:${PLATFORM_REFERERS.instagram}`);
+        args.push('--add-header', `Origin:${PLATFORM_REFERERS.instagram.replace(/\/$/, '')}`);
+        args.push('--socket-timeout', '30');
+        args.push('--retries', '5');
+        args.push('--fragment-retries', '5');
+        if (useCookies && instagramCookiesReady) {
+            console.log(`Using Instagram cookies (${cookieStatus.instagram})`);
+            args.push('--cookies', IG_COOKIES_PATH);
+        }
+        args.push('-f', PREFERRED_720_FORMAT);
         args.push('--merge-output-format', 'mp4');
     } else if (platform === 'facebook') {
-        args.push('--cookies', FB_COOKIES_PATH);
-        args.push('-f', 'best[ext=mp4]/best/bestvideo+bestaudio/best');
+        args.push('--user-agent', YT_USER_AGENT);
+        args.push('--add-header', `Referer:${PLATFORM_REFERERS.facebook}`);
+        args.push('--add-header', `Origin:${PLATFORM_REFERERS.facebook.replace(/\/$/, '')}`);
         args.push('--merge-output-format', 'mp4');
         args.push('--socket-timeout', '30');
         args.push('--retries', '5');
+        args.push('--fragment-retries', '5');
+        if (useCookies && facebookCookiesReady) {
+            console.log(`Using Facebook cookies (${cookieStatus.facebook})`);
+            args.push('--cookies', FB_COOKIES_PATH);
+        }
+        args.push('-f', PREFERRED_720_FORMAT);
     }
 
     args.push('-o', outputPath, url);
@@ -473,16 +600,14 @@ function runYtDlp(args, downloadId, timeoutMs = DOWNLOAD_TIMEOUT_MS) {
 }
 
 async function finalizeDownload(outputPath, filename, platform, downloadId) {
-    if (platform === 'instagram') {
-        try {
-            await ensureCompatibleMp4(outputPath, downloadId);
-        } catch (err) {
-            console.warn('Compatibility pass skipped, using original file:', err.message);
-            const info = await getMediaInfo(outputPath);
-            const hasVideo = info?.streams?.some((s) => s.codec_type === 'video');
-            if (!hasVideo) {
-                throw new Error('Downloaded file is not a valid video. Update Instagram cookies and try again.');
-            }
+    try {
+        await ensureCompatibleMp4(outputPath, downloadId, TARGET_MAX_HEIGHT);
+    } catch (err) {
+        console.warn('Compatibility pass skipped, using original file:', err.message);
+        const info = await getMediaInfo(outputPath);
+        const hasVideo = info?.streams?.some((s) => s.codec_type === 'video');
+        if (!hasVideo) {
+            throw new Error('Downloaded file is not a valid video. Update cookies and try again.');
         }
     }
 
@@ -548,6 +673,45 @@ async function runYoutubeDownload(url, outputPath, downloadId) {
     return lastResult;
 }
 
+async function runStandardDownload(url, platform, outputPath, downloadId) {
+    await refreshCookieReadiness();
+
+    if (platform === 'tiktok') {
+        const args = await buildYtDlpArgs(url, platform, outputPath);
+        return runYtDlp(args, downloadId);
+    }
+
+    const canUseCookies = platform === 'instagram'
+        ? instagramCookiesReady
+        : platform === 'facebook'
+            ? facebookCookiesReady
+            : false;
+    const attempts = canUseCookies ? [false, true] : [false];
+    let lastResult = { code: 1, lastError: '' };
+
+    for (const useCookies of attempts) {
+        sendProgress(downloadId, {
+            type: 'status',
+            message: useCookies ? 'Retrying with cookies...' : 'Starting public download...',
+            progress: 0
+        });
+
+        const args = await buildYtDlpArgs(url, platform, outputPath, { useCookies });
+        lastResult = await runYtDlp(args, downloadId);
+        if (lastResult.code === 0) {
+            return lastResult;
+        }
+
+        if (!canUseCookies || useCookies) {
+            break;
+        }
+
+        console.log(`${platform} public download failed; retrying with valid cookies.`);
+    }
+
+    return lastResult;
+}
+
 // Download function with real-time progress tracking
 async function downloadWithProgress(url, platform, downloadId) {
     const filename = `${platform}_${downloadId}.mp4`;
@@ -560,10 +724,7 @@ async function downloadWithProgress(url, platform, downloadId) {
         if (platform === 'youtube') {
             result = await runYoutubeDownload(url, outputPath, downloadId);
         } else {
-            const args = await buildYtDlpArgs(url, platform, outputPath, {
-                cloudYoutubeMode: IS_CLOUD_HOST
-            });
-            result = await runYtDlp(args, downloadId);
+            result = await runStandardDownload(url, platform, outputPath, downloadId);
         }
 
         if (result.code === 0) {
@@ -579,7 +740,7 @@ async function downloadWithProgress(url, platform, downloadId) {
         console.error(`Download failed with exit code: ${result.code}`);
         sendProgress(downloadId, {
             type: 'error',
-            message: getDownloadErrorMessage(result.lastError, result.code)
+            message: getDownloadErrorMessage(result.lastError, result.code, platform)
         });
     } catch (error) {
         console.error('❌ Download error:', error);
@@ -587,8 +748,16 @@ async function downloadWithProgress(url, platform, downloadId) {
     }
 }
 
-function getDownloadErrorMessage(errorText, code) {
+function getDownloadErrorMessage(errorText, code, platform = '') {
     const text = String(errorText || '').replace(/\s+/g, ' ').trim();
+
+    if (platform === 'instagram' && !instagramCookiesReady && /login|cookies|not granting access|empty media response|403|401/i.test(text)) {
+        return 'Instagram needs fresh cookies with sessionid. Export from instagram.com in Netscape format, then add INSTAGRAM_COOKIES_BASE64 on Railway.';
+    }
+
+    if (platform === 'facebook' && !facebookCookiesReady && /login|cookies|403|401|not available|private/i.test(text)) {
+        return 'Facebook needs fresh cookies with c_user and xs. Export from facebook.com in Netscape format, then add FACEBOOK_COOKIES_BASE64 on Railway.';
+    }
 
     if (/facebook.*cookies|login required|You must log in/i.test(text)) {
         return IS_CLOUD_HOST
@@ -627,25 +796,27 @@ function getDownloadErrorMessage(errorText, code) {
     return text ? text.slice(0, 220) : `Download failed (code: ${code})`;
 }
 
-async function ensureCompatibleMp4(filePath, downloadId) {
+async function ensureCompatibleMp4(filePath, downloadId, maxHeight = TARGET_MAX_HEIGHT) {
     const mediaInfo = await getMediaInfo(filePath);
     const videoStream = mediaInfo?.streams?.find((stream) => stream.codec_type === 'video');
     const audioStream = mediaInfo?.streams?.find((stream) => stream.codec_type === 'audio');
     const videoCodec = videoStream?.codec_name || '';
     const audioCodec = audioStream?.codec_name || '';
+    const videoHeight = Number(videoStream?.height) || 0;
+    const needsDownscale = videoHeight > maxHeight;
 
     if (!videoStream) {
         throw new Error('The downloaded file does not contain a playable video stream.');
     }
 
-    if (videoCodec === 'h264' && (!audioStream || audioCodec === 'aac')) {
+    if (!needsDownscale && videoCodec === 'h264' && (!audioStream || audioCodec === 'aac')) {
         return;
     }
 
     sendProgress(downloadId, {
         type: 'progress',
         progress: 96,
-        message: 'Optimizing video compatibility...'
+        message: needsDownscale ? `Converting to ${maxHeight}p...` : 'Optimizing video compatibility...'
     });
 
     const tempPath = filePath.replace(/\.mp4$/i, '.compatible.mp4');
@@ -659,12 +830,19 @@ async function ensureCompatibleMp4(filePath, downloadId) {
         '-c:v', 'libx264',
         '-preset', 'veryfast',
         '-crf', '23',
-        '-pix_fmt', 'yuv420p',
+        '-pix_fmt', 'yuv420p'
+    ];
+
+    if (needsDownscale) {
+        args.push('-vf', `scale=-2:${maxHeight}`);
+    }
+
+    args.push(
         '-c:a', 'aac',
         '-b:a', '128k',
         '-movflags', '+faststart',
         tempPath
-    ];
+    );
 
     const result = await runProcess(FFMPEG_PATH, args);
     if (result.code !== 0) {
