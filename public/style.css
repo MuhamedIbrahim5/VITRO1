@@ -17,8 +17,8 @@ body {
 .hero-header {
     position: relative;
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    padding: 4rem 2rem 8rem;
-    margin: -20px -20px 3rem -20px;
+    padding: 3.5rem 1.5rem 5rem;
+    margin: 0;
     overflow: hidden;
 }
 
@@ -29,16 +29,14 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background:
-        radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
-        radial-gradient(circle at 80% 80%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
+    background: rgba(255, 255, 255, 0.04);
     pointer-events: none;
 }
 
 .hero-content {
     position: relative;
     z-index: 2;
-    max-width: 800px;
+    max-width: 860px;
     margin: 0 auto;
     text-align: center;
     color: white;
@@ -61,7 +59,7 @@ body {
 .hero-description {
     font-size: 1.1rem;
     opacity: 0.9;
-    margin-bottom: 2.5rem;
+    margin-bottom: 2rem;
 }
 
 .hero-stats {
@@ -113,7 +111,7 @@ body {
 
 @media (max-width: 768px) {
     .hero-header {
-        padding: 3rem 1.5rem 6rem;
+        padding: 2.5rem 1rem 4rem;
     }
 
     .hero-title {
@@ -500,7 +498,7 @@ body[dir="rtl"] .language-switcher {
     width: 100%;
     padding: 18px 60px 18px 20px;
     border: 2px solid #e0e0e0;
-    border-radius: 15px;
+    border-radius: 8px;
     font-size: 16px;
     font-family: 'Cairo', sans-serif;
     transition: all 0.3s;
@@ -531,7 +529,7 @@ body[dir="rtl"] .url-input {
     justify-content: center;
     color: #6b7280;
     transition: all 0.3s;
-    border-radius: 8px;
+    border-radius: 6px;
 }
 
 body[dir="rtl"] .paste-icon-btn {
@@ -603,7 +601,7 @@ body[dir="rtl"] .paste-tooltip {
     background: linear-gradient(135deg, #070808 0%, #0fc068 100%);
     color: white;
     border: none;
-    border-radius: 15px;
+    border-radius: 8px;
     font-size: 18px;
     font-weight: 600;
     cursor: pointer;
@@ -626,7 +624,7 @@ body[dir="rtl"] .paste-tooltip {
     margin-top: 20px;
     padding: 20px;
     background: white;
-    border-radius: 15px;
+    border-radius: 8px;
 }
 
 .progress-container.hidden {
@@ -659,8 +657,8 @@ body[dir="rtl"] .paste-tooltip {
 .status-message {
     margin-top: 20px;
     padding: 15px;
-    border-radius: 12px;
-    text-align: center;
+    border-radius: 8px;
+    text-align: left;
     font-weight: 500;
 }
 
@@ -674,12 +672,34 @@ body[dir="rtl"] .paste-tooltip {
     border: 2px solid #fecaca;
 }
 
+.status-title {
+    font-weight: 700;
+    line-height: 1.5;
+}
+
+.status-suggestions {
+    margin: 10px 0 0;
+    padding-left: 1.2rem;
+    color: #7f1d1d;
+    font-size: 0.95rem;
+    line-height: 1.55;
+}
+
+body[dir="rtl"] .status-message {
+    text-align: right;
+}
+
+body[dir="rtl"] .status-suggestions {
+    padding-left: 0;
+    padding-right: 1.2rem;
+}
+
 .result-section {
     margin-top: 20px;
     padding: 25px;
     background: white;
     border: 2px solid #10b981;
-    border-radius: 15px;
+    border-radius: 8px;
     text-align: center;
 }
 
@@ -700,7 +720,7 @@ body[dir="rtl"] .paste-tooltip {
     background: #10b981;
     color: white;
     text-decoration: none;
-    border-radius: 12px;
+    border-radius: 8px;
     font-weight: 600;
     transition: all 0.3s;
 }
@@ -1025,12 +1045,14 @@ body.dark-mode .feedback-textarea {
 
 /* Hero Download Tool */
 .hero-download-tool {
-    max-width: 700px;
-    margin: 2rem auto 0;
+    display: grid;
+    gap: 1rem;
+    max-width: 720px;
+    margin: 1.8rem auto 0;
 }
 
 .hero-download-tool .input-wrapper {
-    margin-bottom: 1rem;
+    margin-bottom: 0;
 }
 
 .hero-download-tool .platform-buttons {
@@ -1038,7 +1060,15 @@ body.dark-mode .feedback-textarea {
     justify-content: center;
     gap: 0.75rem;
     flex-wrap: wrap;
-    margin-top: 1.5rem;
+    margin-top: 0.25rem;
+}
+
+.hero-download-tool .supported-platforms {
+    margin: 0.15rem 0 0;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 0.95rem;
+    line-height: 1.5;
 }
 
 .hero-download-tool .url-input {
@@ -1047,6 +1077,7 @@ body.dark-mode .feedback-textarea {
     color: #1f2937;
     font-size: 1rem;
     padding: 1.2rem 3.5rem 1.2rem 1.5rem;
+    min-height: 58px;
 }
 
 .hero-download-tool .url-input::placeholder {
@@ -1069,38 +1100,38 @@ body.dark-mode .feedback-textarea {
 
 .hero-download-tool .download-btn {
     width: 100%;
-    background: white;
-    color: #2f5548;
+    background: #10231d;
+    color: white;
     font-size: 1.1rem;
     font-weight: 700;
     padding: 1.2rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    margin-bottom: 2rem;
+    box-shadow: none;
+    margin: 0;
     border: none;
-    border-radius: 12px;
+    border-radius: 8px;
     cursor: pointer;
     transition: all 0.3s ease;
 }
 
 .hero-download-tool .download-btn:hover {
-    background: #f0fdf4;
-    color: #2c4940;
+    background: #0b1714;
+    color: white;
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
 }
 
 body.dark-mode .hero-download-tool .download-btn {
-    background: white;
-    color: #19332a;
+    background: #10231d;
+    color: white;
 }
 
 
 /* Progress and Results in Hero */
 .hero-download-tool .progress-container {
     background: rgba(255, 255, 255, 0.95);
-    margin-top: 1.5rem;
+    margin-top: 0;
     padding: 1.5rem;
-    border-radius: 12px;
+    border-radius: 8px;
 }
 
 .hero-download-tool .progress-bar {
@@ -1118,17 +1149,23 @@ body.dark-mode .hero-download-tool .download-btn {
 
 .hero-download-tool .status-message {
     background: rgba(255, 255, 255, 0.95);
-    margin-top: 1.5rem;
+    margin-top: 0;
     padding: 1.2rem;
-    border-radius: 12px;
+    border-radius: 8px;
     font-weight: 600;
+}
+
+.hero-download-tool .status-message.error {
+    background: #fff1f2;
+    border: 1px solid #fecdd3;
+    color: #991b1b;
 }
 
 .hero-download-tool .result-section {
     background: rgba(255, 255, 255, 0.95);
-    margin-top: 1.5rem;
+    margin-top: 0;
     padding: 2rem;
-    border-radius: 12px;
+    border-radius: 8px;
 }
 
 .hero-download-tool .success-text {
@@ -1142,7 +1179,7 @@ body.dark-mode .hero-download-tool .download-btn {
     color: white;
     display: inline-block;
     padding: 1rem 2.5rem;
-    border-radius: 12px;
+    border-radius: 8px;
     text-decoration: none;
     font-weight: 700;
     margin-top: 1rem;
@@ -1164,6 +1201,12 @@ body.dark-mode .hero-download-tool .result-section {
 body.dark-mode .hero-download-tool .progress-text,
 body.dark-mode .hero-download-tool .status-message {
     color: #333;
+}
+
+body.dark-mode .hero-download-tool .status-message.error {
+    background: #fff1f2;
+    border-color: #fecdd3;
+    color: #991b1b;
 }
 
 .mobile-lan-hint {
@@ -1336,6 +1379,25 @@ body.dark-mode .platform-btn:hover {
     .platform-btn {
         padding: 0.5rem 1rem;
         font-size: 0.85rem;
+    }
+
+    .hero-download-tool {
+        max-width: 100%;
+        gap: 0.85rem;
+    }
+
+    .hero-download-tool .url-input {
+        min-height: 54px;
+        font-size: 0.95rem;
+    }
+
+    .hero-download-tool .download-btn {
+        font-size: 1rem;
+        padding: 1rem;
+    }
+
+    .status-suggestions {
+        font-size: 0.9rem;
     }
 }
 
@@ -1630,7 +1692,7 @@ ating Bar */
 /* Rat
 ing Bar in Header */
 .rating-bar-header {
-    margin-right: 15px;
+    display: none;
 }
 
 .rating-content-header {

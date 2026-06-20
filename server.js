@@ -41,8 +41,9 @@ const IS_CLOUD_HOST = Boolean(
     process.env.RENDER ||
     (!HAS_LOCAL_WINDOWS_FFMPEG && process.platform !== 'win32')
 );
-const DEPLOY_VERSION = '2026-05-25-social-720-fix';
-const YT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const DEPLOY_VERSION = '2026-06-18-platform-errors-cookies';
+const YT_USER_AGENT = process.env.YT_DLP_USER_AGENT ||
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 // Try without cookies first (android works best); cookies only on auth retry
 const YOUTUBE_CLIENTS = IS_CLOUD_HOST
     ? ['android_vr', 'android', 'ios', 'web', 'mweb']
@@ -66,6 +67,13 @@ const PLATFORM_REFERERS = {
     instagram: 'https://www.instagram.com/',
     facebook: 'https://www.facebook.com/'
 };
+const SUPPORTED_PLATFORMS_LABEL = 'TikTok, Instagram, YouTube, Facebook';
+const SUPPORTED_HOSTS = {
+    tiktok: ['tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com', 'tiktokv.com'],
+    instagram: ['instagram.com', 'instagr.am', 'l.instagram.com'],
+    youtube: ['youtube.com', 'youtu.be', 'youtube-nocookie.com', 'm.youtube.com'],
+    facebook: ['facebook.com', 'fb.watch', 'fb.com', 'fb.me', 'm.facebook.com']
+};
 let youtubeCookiesReady = false;
 let instagramCookiesReady = false;
 let facebookCookiesReady = false;
@@ -74,6 +82,102 @@ let cookieStatus = {
     instagram: 'not checked',
     facebook: 'not checked'
 };
+
+function parseInputUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    try {
+        return new URL(raw);
+    } catch {
+        if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+            try {
+                return new URL(`https://${raw}`);
+            } catch {
+                return null;
+            }
+        }
+        return null;
+    }
+}
+
+function hostMatches(hostname, rootHost) {
+    const host = String(hostname || '').toLowerCase().replace(/\.$/, '');
+    const root = String(rootHost || '').toLowerCase();
+    return host === root || host.endsWith(`.${root}`);
+}
+
+function makeUserError(code, error, errorAr, suggestions = {}) {
+    return {
+        code,
+        error,
+        errorAr,
+        suggestions: {
+            en: suggestions.en || [],
+            ar: suggestions.ar || []
+        }
+    };
+}
+
+function sendErrorResponse(res, status, payload) {
+    return res.status(status).json({
+        success: false,
+        ...payload
+    });
+}
+
+function sendProgressError(downloadId, payload) {
+    sendProgress(downloadId, {
+        type: 'error',
+        message: payload.error,
+        ...payload
+    });
+}
+
+function getUnsupportedUrlError(rawUrl) {
+    const parsed = parseInputUrl(rawUrl);
+    const host = parsed?.hostname || '';
+    const looksLikeBackend =
+        hostMatches(host, 'ngrok-free.dev') ||
+        hostMatches(host, 'ngrok.io') ||
+        hostMatches(host, 'localhost') ||
+        host === '127.0.0.1' ||
+        host === '0.0.0.0';
+
+    if (!parsed) {
+        return makeUserError(
+            'invalid_url',
+            'Please enter a valid video URL.',
+            'من فضلك أدخل رابط فيديو صحيح.',
+            {
+                en: ['The link must start with http:// or https://.', `Supported platforms: ${SUPPORTED_PLATFORMS_LABEL}.`],
+                ar: ['الرابط يجب أن يبدأ بـ http:// أو https://.', 'المنصات المدعومة: TikTok وInstagram وYouTube وFacebook.']
+            }
+        );
+    }
+
+    if (looksLikeBackend) {
+        return makeUserError(
+            'backend_url_entered',
+            'This is the app/server link, not a social video link.',
+            'هذا رابط الموقع أو السيرفر، وليس رابط فيديو من السوشيال ميديا.',
+            {
+                en: ['Open the video in TikTok, Instagram, YouTube or Facebook, then paste that video URL here.'],
+                ar: ['افتح الفيديو من TikTok أو Instagram أو YouTube أو Facebook، ثم الصق رابط الفيديو نفسه هنا.']
+            }
+        );
+    }
+
+    return makeUserError(
+        'platform_not_supported',
+        `Platform not supported. Supported: ${SUPPORTED_PLATFORMS_LABEL}.`,
+        'المنصة غير مدعومة. المنصات المدعومة: TikTok وInstagram وYouTube وFacebook.',
+        {
+            en: ['Paste a direct video, reel, short, post, or watch link from a supported platform.'],
+            ar: ['الصق رابط فيديو أو ريل أو شورت أو منشور مباشر من منصة مدعومة.']
+        }
+    );
+}
 
 async function loadCookieFileFromEnv(envName, filePath, label) {
     const b64 = process.env[envName];
@@ -199,6 +303,13 @@ function normalizeInstagramUrl(url) {
     return normalized.split('?')[0];
 }
 
+function normalizePlatformUrl(url, platform) {
+    if (platform === 'youtube') return normalizeYoutubeUrl(url);
+    if (platform === 'facebook') return normalizeFacebookUrl(url);
+    if (platform === 'instagram') return normalizeInstagramUrl(url);
+    return url;
+}
+
 async function initFacebookCookies() {
     await loadCookieFileFromEnv('FACEBOOK_COOKIES_BASE64', FB_COOKIES_PATH, 'Facebook');
     await refreshCookieReadiness(true);
@@ -268,7 +379,8 @@ function getLanIp() {
         .find((n) => n && n.family === 'IPv4' && !n.internal)?.address || null;
 }
 
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+    await refreshCookieReadiness();
     res.json({ 
         status: 'ok',
         version: DEPLOY_VERSION,
@@ -372,49 +484,41 @@ app.post('/api/download', async (req, res) => {
         console.log('🆔 Download ID:', downloadId);
 
         if (!url) {
-            return res.status(400).json({
-                success: false,
-                error: 'Please enter a video URL'
-            });
+            return sendErrorResponse(res, 400, makeUserError(
+                'missing_url',
+                'Please enter a video URL.',
+                'من فضلك أدخل رابط الفيديو.',
+                {
+                    en: [`Supported platforms: ${SUPPORTED_PLATFORMS_LABEL}.`],
+                    ar: ['المنصات المدعومة: TikTok وInstagram وYouTube وFacebook.']
+                }
+            ));
         }
 
-        let videoUrl = url;
-        if (/youtube\.com|youtu\.be/i.test(url)) {
-            videoUrl = normalizeYoutubeUrl(url);
-            if (videoUrl !== url) {
-                console.log('📝 Normalized YouTube URL:', videoUrl);
-            }
-        }
-        if (/facebook\.com|fb\.watch/i.test(url)) {
-            videoUrl = normalizeFacebookUrl(url);
-            if (videoUrl !== url) {
-                console.log('📝 Normalized Facebook URL:', videoUrl);
-            }
-        }
-        if (/instagram\.com/i.test(url)) {
-            videoUrl = normalizeInstagramUrl(url);
-            if (videoUrl !== url) {
-                console.log('📝 Normalized Instagram URL:', videoUrl);
-            }
-        }
-
-        const platform = detectPlatform(videoUrl);
+        const platform = detectPlatform(url);
         console.log('🎯 Platform detected:', platform);
 
         if (!platform) {
-            return res.status(400).json({
-                success: false,
-                error: 'Platform not supported. Supported: TikTok, Instagram, YouTube, Facebook'
-            });
+            return sendErrorResponse(res, 400, getUnsupportedUrlError(url));
+        }
+
+        const videoUrl = normalizePlatformUrl(url, platform);
+        if (videoUrl !== url) {
+            console.log('📝 Normalized URL:', videoUrl);
         }
 
         try {
             await validatePlatformRequirements(platform);
         } catch (validationError) {
-            return res.status(400).json({
-                success: false,
-                error: validationError.message
-            });
+            return sendErrorResponse(res, 400, makeUserError(
+                'platform_requirements_failed',
+                validationError.message,
+                validationError.message,
+                {
+                    en: ['Refresh cookies, restart the server, then try again.'],
+                    ar: ['حدّث الكوكيز، أعد تشغيل السيرفر، ثم جرّب مرة أخرى.']
+                }
+            ));
         }
 
         activeDownloads.set(downloadId, { clients: [], pending: [] });
@@ -439,7 +543,7 @@ app.post('/api/download', async (req, res) => {
 });
 
 function isYoutubeAuthError(text) {
-    return /Sign in|cookies|authentication|not a bot/i.test(String(text || ''));
+    return /Sign in|cookies|authentication|not a bot|confirm you|unusual traffic|requires authentication|HTTP Error 429|429 Too Many Requests/i.test(String(text || ''));
 }
 
 async function fileExists(filePath) {
@@ -469,7 +573,10 @@ async function buildYtDlpArgs(url, platform, outputPath, options = {}) {
         args.push('--extractor-args', `youtube:player_client=${youtubeClient}`);
         args.push('--skip-unavailable-fragments');
         args.push('--retries', '10');
+        args.push('--extractor-retries', '3');
         args.push('--fragment-retries', '10');
+        args.push('--sleep-requests', '1');
+        args.push('--sleep-interval', '1');
         args.push('--add-header', `Referer:${PLATFORM_REFERERS.youtube}`);
 
         if (IS_CLOUD_HOST) {
@@ -732,68 +839,176 @@ async function downloadWithProgress(url, platform, downloadId) {
                 await finalizeDownload(outputPath, filename, platform, downloadId);
             } catch (error) {
                 console.error('File check error:', error);
-                sendProgress(downloadId, { type: 'error', message: error.message || 'Failed to save video' });
+                sendProgressError(downloadId, getDownloadErrorDetails(error.message, 1, platform));
             }
             return;
         }
 
         console.error(`Download failed with exit code: ${result.code}`);
-        sendProgress(downloadId, {
-            type: 'error',
-            message: getDownloadErrorMessage(result.lastError, result.code, platform)
-        });
+        sendProgressError(downloadId, getDownloadErrorDetails(result.lastError, result.code, platform));
     } catch (error) {
         console.error('❌ Download error:', error);
-        sendProgress(downloadId, { type: 'error', message: error.message || 'Download failed' });
+        sendProgressError(downloadId, getDownloadErrorDetails(error.message, 1, platform));
     }
 }
 
-function getDownloadErrorMessage(errorText, code, platform = '') {
-    const text = String(errorText || '').replace(/\s+/g, ' ').trim();
+function getDownloadErrorDetails(errorText, code, platform = '') {
+    const text = String(errorText || '')
+        .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (/timed out|timeout/i.test(text)) {
+        return makeUserError(
+            'download_timeout',
+            'The download took too long and was stopped.',
+            'استغرق التحميل وقتا طويلا وتم إيقافه.',
+            {
+                en: ['Try again with the same link.', 'If it repeats, refresh cookies or try another video.'],
+                ar: ['جرّب نفس الرابط مرة أخرى.', 'إذا تكرر الخطأ، حدّث الكوكيز أو جرّب فيديو آخر.']
+            }
+        );
+    }
 
     if (platform === 'instagram' && !instagramCookiesReady && /login|cookies|not granting access|empty media response|403|401/i.test(text)) {
-        return 'Instagram needs fresh cookies with sessionid. Export from instagram.com in Netscape format, then add INSTAGRAM_COOKIES_BASE64 on Railway.';
+        return makeUserError(
+            'instagram_cookies_needed',
+            'Instagram needs fresh cookies with sessionid.',
+            'إنستجرام يحتاج كوكيز حديثة تحتوي على sessionid.',
+            {
+                en: ['Run scripts\\refresh-cookies.ps1 -Platforms instagram locally.', 'On Railway, update INSTAGRAM_COOKIES_BASE64 then redeploy.'],
+                ar: ['شغّل scripts\\refresh-cookies.ps1 -Platforms instagram محليا.', 'على Railway حدّث INSTAGRAM_COOKIES_BASE64 ثم اعمل redeploy.']
+            }
+        );
     }
 
     if (platform === 'facebook' && !facebookCookiesReady && /login|cookies|403|401|not available|private/i.test(text)) {
-        return 'Facebook needs fresh cookies with c_user and xs. Export from facebook.com in Netscape format, then add FACEBOOK_COOKIES_BASE64 on Railway.';
+        return makeUserError(
+            'facebook_cookies_needed',
+            'Facebook needs fresh cookies with c_user and xs.',
+            'فيسبوك يحتاج كوكيز حديثة تحتوي على c_user وxs.',
+            {
+                en: ['Run scripts\\refresh-cookies.ps1 -Platforms facebook locally.', 'On Railway, update FACEBOOK_COOKIES_BASE64 then redeploy.'],
+                ar: ['شغّل scripts\\refresh-cookies.ps1 -Platforms facebook محليا.', 'على Railway حدّث FACEBOOK_COOKIES_BASE64 ثم اعمل redeploy.']
+            }
+        );
     }
 
     if (/facebook.*cookies|login required|You must log in/i.test(text)) {
-        return IS_CLOUD_HOST
-            ? 'Facebook needs cookies on Railway (FACEBOOK_COOKIES_BASE64).'
-            : 'Facebook needs www.facebook.com_cookies.txt. Run export-facebook-cookies.bat and restart.';
+        return makeUserError(
+            'facebook_login_required',
+            IS_CLOUD_HOST
+                ? 'Facebook needs cookies on the hosted server.'
+                : 'Facebook needs a fresh www.facebook.com_cookies.txt file.',
+            IS_CLOUD_HOST
+                ? 'فيسبوك يحتاج كوكيز على السيرفر المستضاف.'
+                : 'فيسبوك يحتاج ملف www.facebook.com_cookies.txt حديث.',
+            {
+                en: [IS_CLOUD_HOST ? 'Update FACEBOOK_COOKIES_BASE64 and redeploy.' : 'Run scripts\\refresh-cookies.ps1 -Platforms facebook, then restart.'],
+                ar: [IS_CLOUD_HOST ? 'حدّث FACEBOOK_COOKIES_BASE64 ثم اعمل redeploy.' : 'شغّل scripts\\refresh-cookies.ps1 -Platforms facebook ثم أعد التشغيل.']
+            }
+        );
     }
 
     if (/Instagram.*cookies|empty media response|not granting access|login required/i.test(text)) {
-        return IS_CLOUD_HOST
-            ? 'Instagram needs fresh cookies on Railway (INSTAGRAM_COOKIES_BASE64).'
-            : 'Instagram needs fresh cookies. Run export-instagram-cookies.bat and restart the server.';
+        return makeUserError(
+            'instagram_login_required',
+            IS_CLOUD_HOST
+                ? 'Instagram needs fresh cookies on the hosted server.'
+                : 'Instagram needs fresh cookies.',
+            IS_CLOUD_HOST
+                ? 'إنستجرام يحتاج كوكيز حديثة على السيرفر المستضاف.'
+                : 'إنستجرام يحتاج كوكيز حديثة.',
+            {
+                en: [IS_CLOUD_HOST ? 'Update INSTAGRAM_COOKIES_BASE64 and redeploy.' : 'Run scripts\\refresh-cookies.ps1 -Platforms instagram, then restart.'],
+                ar: [IS_CLOUD_HOST ? 'حدّث INSTAGRAM_COOKIES_BASE64 ثم اعمل redeploy.' : 'شغّل scripts\\refresh-cookies.ps1 -Platforms instagram ثم أعد التشغيل.']
+            }
+        );
     }
 
     if (/ffmpeg|ffprobe/i.test(text) && /version|Copyright|configuration/i.test(text)) {
-        return 'Video processing failed. Try again or update cookies for this platform.';
+        return makeUserError(
+            'video_processing_failed',
+            'Video processing failed after download.',
+            'فشلت معالجة الفيديو بعد التحميل.',
+            {
+                en: ['Try again, or refresh cookies for this platform if the file keeps failing.'],
+                ar: ['جرّب مرة أخرى، أو حدّث كوكيز المنصة إذا استمر فشل الملف.']
+            }
+        );
     }
 
     if (/ffmpeg|ffprobe/i.test(text)) {
-        return 'ffmpeg is missing or not reachable. Restart the server and try again.';
+        return makeUserError(
+            'ffmpeg_missing',
+            'ffmpeg is missing or not reachable.',
+            'ffmpeg غير موجود أو لا يمكن الوصول إليه.',
+            {
+                en: ['Restart the server and confirm ffmpeg is installed or bundled.'],
+                ar: ['أعد تشغيل السيرفر وتأكد أن ffmpeg مثبت أو موجود مع المشروع.']
+            }
+        );
     }
 
-    if (/Sign in|cookies|authentication|not a bot|requires authentication/i.test(text)) {
-        return IS_CLOUD_HOST
-            ? 'YouTube blocked this video. Try again in a minute, or remove stale YOUTUBE_COOKIES_BASE64 from Railway variables.'
-            : 'YouTube needs fresh cookies. Run export_youtube_cookies.bat then restart the server.';
+    if (/Sign in|cookies|authentication|not a bot|requires authentication|confirm you|unusual traffic|429/i.test(text)) {
+        return makeUserError(
+            'youtube_auth_or_bot_check',
+            IS_CLOUD_HOST
+                ? 'YouTube blocked this request or asked for verification.'
+                : 'YouTube needs fresh cookies or asked for verification.',
+            IS_CLOUD_HOST
+                ? 'يوتيوب حظر هذا الطلب أو طلب تحقق.'
+                : 'يوتيوب يحتاج كوكيز حديثة أو طلب تحقق.',
+            {
+                en: [
+                    IS_CLOUD_HOST ? 'Try again in a minute or use the local server.' : 'Run scripts\\refresh-cookies.ps1 -Platforms youtube, then restart.',
+                    'Try another public YouTube video if this one keeps failing.'
+                ],
+                ar: [
+                    IS_CLOUD_HOST ? 'جرّب مرة أخرى بعد دقيقة أو استخدم السيرفر المحلي.' : 'شغّل scripts\\refresh-cookies.ps1 -Platforms youtube ثم أعد التشغيل.',
+                    'جرّب فيديو YouTube عام آخر إذا استمر الخطأ.'
+                ]
+            }
+        );
     }
 
-    if (/Video unavailable|Private video|This video is unavailable/i.test(text)) {
-        return 'Video is unavailable or private.';
+    if (/Video unavailable|Private video|This video is unavailable|copyright|age.restricted/i.test(text)) {
+        return makeUserError(
+            'video_unavailable',
+            'This video is unavailable, private, age-restricted, or copyrighted.',
+            'هذا الفيديو غير متاح أو خاص أو عليه قيود عمرية أو حقوق نشر.',
+            {
+                en: ['Use a public video link that opens normally in your browser.'],
+                ar: ['استخدم رابط فيديو عام يفتح بشكل طبيعي في المتصفح.']
+            }
+        );
     }
 
     if (/Requested format is not available/i.test(text)) {
-        return 'Requested video format is not available. Try another video or update yt-dlp.';
+        return makeUserError(
+            'format_unavailable',
+            'The requested video format is not available.',
+            'صيغة الفيديو المطلوبة غير متاحة.',
+            {
+                en: ['Try another video, or update yt-dlp to the latest version.'],
+                ar: ['جرّب فيديو آخر، أو حدّث yt-dlp إلى آخر إصدار.']
+            }
+        );
     }
 
-    return text ? text.slice(0, 220) : `Download failed (code: ${code})`;
+    return makeUserError(
+        'download_failed',
+        text ? text.slice(0, 220) : `Download failed (code: ${code}).`,
+        text ? text.slice(0, 220) : `فشل التحميل (الكود: ${code}).`,
+        {
+            en: ['Try again, refresh cookies, or use a different public link.'],
+            ar: ['جرّب مرة أخرى، أو حدّث الكوكيز، أو استخدم رابطا عاما مختلفا.']
+        }
+    );
+}
+
+function getDownloadErrorMessage(errorText, code, platform = '') {
+    return getDownloadErrorDetails(errorText, code, platform).error;
 }
 
 async function ensureCompatibleMp4(filePath, downloadId, maxHeight = TARGET_MAX_HEIGHT) {
@@ -904,10 +1119,16 @@ function cleanProcessError(errorText) {
 
 // Platform detection
 function detectPlatform(url) {
-    if (/tiktok\.com/.test(url)) return 'tiktok';
-    if (/instagram\.com/.test(url)) return 'instagram';
-    if (/youtube\.com|youtu\.be/.test(url)) return 'youtube';
-    if (/facebook\.com|fb\.watch/.test(url)) return 'facebook';
+    const parsed = parseInputUrl(url);
+    if (!parsed || !/^https?:$/i.test(parsed.protocol)) return null;
+
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    for (const [platform, hosts] of Object.entries(SUPPORTED_HOSTS)) {
+        if (hosts.some((host) => hostMatches(hostname, host))) {
+            return platform;
+        }
+    }
+
     return null;
 }
 

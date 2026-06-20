@@ -115,8 +115,8 @@ if (!localStorage.getItem('preferredLanguage')) {
 
 switchLanguage(savedLang, savedFlag);
 
-// API Base URL - static hosts (GitHub Pages / Firebase) use Railway backend
-const DEFAULT_PRODUCTION_API_BASE = 'https://vitro1-production-be78.up.railway.app';
+// API Base URL - static hosts (GitHub Pages / Firebase) use ngrok backend
+const DEFAULT_PRODUCTION_API_BASE = 'https://runaround-carrot-deskwork.ngrok-free.dev';
 const normalizeApiBase = (value) => String(value || '').trim().replace(/\/+$/, '');
 const configuredApiBase = normalizeApiBase(
     window.VITRO_API_BASE_URL || localStorage.getItem('VITRO_API_BASE_URL')
@@ -149,7 +149,7 @@ function isYoutubeUrl(url) {
 }
 
 function isYoutubeBackendError(message) {
-    return /authentication|blocked|Sign in|cookies|not a bot/i.test(String(message || ''));
+    return /authentication|blocked|Sign in|cookies|not a bot|confirm you|429/i.test(getErrorSearchText(message));
 }
 
 function parseLanFromPageUrl() {
@@ -473,7 +473,7 @@ async function handleDownload() {
         }
 
         if (!response.ok) {
-            showError(data?.error || t('tryAgain'));
+            showError(data?.error || t('tryAgain'), data);
             return;
         }
         
@@ -481,7 +481,7 @@ async function handleDownload() {
             // Use fast fake progress and listen in background
             listenToProgressBackground(data.downloadId, activeApiBase);
         } else {
-            showError(data.error || t('errorOccurred'));
+            showError(data?.error || t('errorOccurred'), data || {});
         }
         
     } catch (error) {
@@ -505,11 +505,13 @@ function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
         if (window.progressInterval) {
             clearInterval(window.progressInterval);
         }
-        showError(
-            currentLang === 'ar'
-                ? 'انتهى الوقت. تأكد من كوكيز Facebook أو جرّب رابطاً آخر.'
-                : 'Timed out. Check Facebook cookies or try another link.'
-        );
+        showError('The download took too long and was stopped.', {
+            errorAr: 'استغرق التحميل وقتا طويلا وتم إيقافه.',
+            suggestions: {
+                en: ['Try again with the same link.', 'Refresh cookies if it happens again.'],
+                ar: ['جرّب نفس الرابط مرة أخرى.', 'حدّث الكوكيز إذا تكرر الخطأ.']
+            }
+        });
     }, DOWNLOAD_TIMEOUT_MS);
     
     eventSource.onmessage = (event) => {
@@ -551,14 +553,14 @@ function listenToProgressBackground(downloadId, apiBase = activeApiBase) {
                 }
                 const url = videoUrlInput.value.trim();
                 if (apiBase !== LOCAL_API_BASE && isYoutubeUrl(url) && isYoutubeBackendError(data.message)) {
-                    retryDownloadViaLocalhost(url, data.message);
+                    retryDownloadViaLocalhost(url, data);
                     return;
                 }
                 if ((isInstagramUrl(url) || isFacebookUrl(url)) && apiBase === DEFAULT_PRODUCTION_API_BASE) {
-                    retryDownloadViaLan(url, data.message);
+                    retryDownloadViaLan(url, data);
                     return;
                 }
-                showYoutubeDeployError(data.message);
+                showYoutubeDeployError(data);
             }
         } catch (err) {
             console.error('Error parsing SSE data:', err);
@@ -606,10 +608,10 @@ async function retryDownloadViaLan(url, originalError) {
             listenToProgressBackground(data.downloadId, lanApi);
             return;
         }
-        showError(data?.error || originalError);
+        showError(data?.error || originalError, data || originalError);
     } catch (err) {
         console.error('LAN fallback failed:', err);
-        showError(originalError || t('tryAgain'));
+        showError(originalError || t('tryAgain'), originalError);
     }
 }
 
@@ -634,6 +636,8 @@ async function retryDownloadViaLocalhost(url, originalError) {
             listenToProgressBackground(data.downloadId, LOCAL_API_BASE);
             return;
         }
+        showYoutubeDeployError(data || originalError);
+        return;
     } catch (err) {
         console.error('Local fallback failed:', err);
     }
@@ -641,27 +645,68 @@ async function retryDownloadViaLocalhost(url, originalError) {
 }
 
 function isFacebookOrInstagramError(message) {
-    return /facebook|instagram|cookies|sessionid|ffmpeg version/i.test(String(message || ''));
+    return /facebook|instagram|sessionid|c_user|xs|ffmpeg version/i.test(getErrorSearchText(message));
 }
 
-function showYoutubeDeployError(message) {
-    if (isFacebookOrInstagramError(message) && API_BASE_URL === DEFAULT_PRODUCTION_API_BASE) {
-        showError(
-            currentLang === 'ar'
-                ? 'فيسبوك وإنستجرام على الموقع يحتاجان كوكيز على Railway. شغّل scripts/export-railway-all-cookies.ps1 ثم Redeploy.'
-                : 'Facebook/Instagram on the live site need cookies on Railway. Run export-railway-all-cookies.ps1 then Redeploy.'
-        );
+function getErrorSearchText(errorLike) {
+    if (!errorLike || typeof errorLike === 'string') {
+        return String(errorLike || '');
+    }
+
+    return [
+        errorLike.code,
+        errorLike.message,
+        errorLike.error,
+        errorLike.errorAr
+    ].filter(Boolean).join(' ');
+}
+
+function getLocalizedErrorMessage(message, details = {}) {
+    const payload = typeof message === 'object' && message !== null
+        ? message
+        : (typeof details === 'object' && details !== null ? details : {});
+
+    if (currentLang === 'ar') {
+        return payload.errorAr || payload.messageAr || (typeof message === 'string' ? message : payload.error || payload.message || t('errorOccurred'));
+    }
+
+    return payload.error || payload.message || (typeof message === 'string' ? message : t('errorOccurred'));
+}
+
+function getLocalizedSuggestions(details = {}) {
+    const payload = typeof details === 'object' && details !== null ? details : {};
+    const suggestions = payload.suggestions;
+
+    if (Array.isArray(suggestions)) return suggestions;
+    if (suggestions && Array.isArray(suggestions[currentLang])) return suggestions[currentLang];
+    if (suggestions && Array.isArray(suggestions.en)) return suggestions.en;
+    return [];
+}
+
+function showYoutubeDeployError(errorLike) {
+    const searchText = getErrorSearchText(errorLike);
+
+    if (isFacebookOrInstagramError(errorLike) && API_BASE_URL === DEFAULT_PRODUCTION_API_BASE) {
+        showError('Facebook/Instagram on the live site need fresh cookies.', {
+            errorAr: 'فيسبوك وإنستجرام على الموقع يحتاجان كوكيز حديثة.',
+            suggestions: {
+                en: ['Run scripts\\refresh-cookies.ps1 -Platforms instagram,facebook locally.', 'Update Railway variables, then redeploy.'],
+                ar: ['شغّل scripts\\refresh-cookies.ps1 -Platforms instagram,facebook محليا.', 'حدّث متغيرات Railway ثم اعمل redeploy.']
+            }
+        });
         return;
     }
-    if (isYoutubeBackendError(message) && API_BASE_URL === DEFAULT_PRODUCTION_API_BASE) {
-        showError(
-            currentLang === 'ar'
-                ? 'سيرفر Railway قديم. شغّل السيرفر محلياً (npm start) أو اعمل Redeploy على Railway.'
-                : 'Railway server is outdated. Run npm start locally or Redeploy on Railway.'
-        );
+    if (isYoutubeBackendError(searchText) && API_BASE_URL === DEFAULT_PRODUCTION_API_BASE) {
+        showError('The hosted server could not complete this YouTube request.', {
+            errorAr: 'السيرفر المستضاف لم يستطع إكمال طلب YouTube.',
+            suggestions: {
+                en: ['Run npm start locally and try again.', 'Refresh YouTube cookies, or redeploy the hosted backend.'],
+                ar: ['شغّل npm start محليا وجرّب مرة أخرى.', 'حدّث كوكيز YouTube أو أعد نشر السيرفر المستضاف.']
+            }
+        });
         return;
     }
-    showError(message || t('errorOccurred'));
+    showError(errorLike || t('errorOccurred'), errorLike);
 }
 
 console.log('Vitro API:', API_BASE_URL);
@@ -700,6 +745,8 @@ function startProcessing() {
     
     resultSection.classList.add('hidden');
     statusMessage.classList.add('hidden');
+    statusMessage.classList.remove('error', 'processing');
+    statusMessage.replaceChildren();
     
     // Show Progress Bar with fast animation
     progressContainer.classList.remove('hidden');
@@ -725,6 +772,7 @@ function showSuccess(downloadUrl, filename, apiBase = activeApiBase) {
     }, 1000);
     
     statusMessage.classList.add('hidden');
+    statusMessage.replaceChildren();
     
     // Check if downloadUrl exists and is valid
     if (downloadUrl) {
@@ -746,7 +794,7 @@ function showSuccess(downloadUrl, filename, apiBase = activeApiBase) {
     }
 }
 
-function showError(message) {
+function showError(message, details = {}) {
     downloadBtn.disabled = false;
     downloadBtn.textContent = currentLang === 'en' ? 'Download Video' : 'تحميل الفيديو';
     videoUrlInput.disabled = false;
@@ -763,15 +811,32 @@ function showError(message) {
     
     statusMessage.classList.remove('hidden', 'processing');
     statusMessage.classList.add('error');
-    statusMessage.textContent = `❌ ${message}`;
-    
-    setTimeout(() => {
-        statusMessage.classList.add('hidden');
-    }, 6000);
+    statusMessage.replaceChildren();
+
+    const title = document.createElement('div');
+    title.className = 'status-title';
+    title.textContent = getLocalizedErrorMessage(message, details);
+    statusMessage.appendChild(title);
+
+    const suggestions = getLocalizedSuggestions(
+        typeof message === 'object' && message !== null ? message : details
+    );
+
+    if (suggestions.length) {
+        const list = document.createElement('ul');
+        list.className = 'status-suggestions';
+        suggestions.slice(0, 3).forEach((suggestion) => {
+            const item = document.createElement('li');
+            item.textContent = suggestion;
+            list.appendChild(item);
+        });
+        statusMessage.appendChild(list);
+    }
 }
 
 function hideMessages() {
     statusMessage.classList.add('hidden');
+    statusMessage.replaceChildren();
     resultSection.classList.add('hidden');
 }
 

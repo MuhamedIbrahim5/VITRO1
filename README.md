@@ -1,60 +1,109 @@
-# Social Media Video Downloader
+# VITRO - Social Media Video Downloader
 
 Download videos from TikTok, Instagram, YouTube, and Facebook without watermarks.
 
-## Features
+## 🌐 Live Demo
 
-- ⚡ Fast & Free
-- ✨ No Watermark
-- 🔓 No Registration Required
-- 🌐 Multi-language (English/Arabic)
-- ⭐ User Reviews System
+- **Firebase**: https://vitro-hosting-20260520.web.app
+- **Local Server**: http://localhost:3001
 
-## Architecture
+## ✨ Features
 
-| Layer | Host | Role |
-|-------|------|------|
-| Frontend | Firebase / GitHub Pages | Static UI (`public/`) |
-| Backend | Railway | API + yt-dlp (`server.js`) |
+- ✅ Download from TikTok, Instagram, YouTube, Facebook
+- ✅ No watermarks
+- ✅ 720p quality (optimized)
+- ✅ Arabic & English support
+- ✅ Mobile responsive
 
-Production API: `https://vitro1-production-be78.up.railway.app`
+## 🚀 Quick Start
 
-## Deploy
-
-```bash
-# Sync root frontend -> public/ (Firebase + GitHub Pages)
-npm run sync
-
-# Firebase hosting
-npm run deploy:firebase
-
-# Railway: push to main, then Redeploy in Railway dashboard if /health has no "version" field
-git push origin main
-
-# Optional: fresh YouTube cookies for Railway
-powershell -File scripts/export-railway-cookies.ps1
-# Paste output into Railway variable YOUTUBE_COOKIES_BASE64, then Redeploy
-```
-
-## Local Development
-
+### 1. Install Dependencies
 ```bash
 npm install
+```
+
+### 2. Run Server
+```bash
 npm start
 ```
 
-Visit http://localhost:3001
+### 3. Open Browser
+Visit: http://localhost:3001
 
-## Requirements
+## 📁 Project Structure
 
-- Node.js 18+
-- yt-dlp (installed automatically in Docker)
-- ffmpeg (installed automatically in Docker)
+```
+VITRO/
+├── server.js           # Backend server (Node.js + Express)
+├── app.js              # Frontend JavaScript
+├── index.html          # Main HTML
+├── style.css           # Styles
+├── Dockerfile          # Docker configuration
+├── package.json        # Dependencies
+├── cookies.txt         # Instagram cookies
+├── youtube_cookies.txt # YouTube cookies
+├── www.facebook.com_cookies.txt # Facebook cookies
+└── public/             # Static files for Firebase
+```
 
-## Environment Variables
+## 🔧 Configuration
 
+### Environment Variables
 - `PORT` - Server port (default: 3001)
+- `NODE_ENV` - Environment (production/development)
 
-## License
+### Cookies Setup
+For Instagram/Facebook/YouTube downloads, you need valid cookies:
 
-MIT
+1. Install [Cookie-Editor](https://chrome.google.com/webstore/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) extension
+2. Login to Instagram/Facebook/YouTube
+3. Export cookies as "Netscape" format
+4. Save as:
+   - `cookies.txt` (Instagram)
+   - `www.facebook.com_cookies.txt` (Facebook)
+   - `youtube_cookies.txt` (YouTube)
+
+## 📦 Deployment
+
+### Firebase Hosting
+```bash
+firebase deploy --only hosting
+```
+
+### Docker
+```bash
+docker build -t vitro .
+docker run -p 3001:3001 vitro
+```
+
+### ngrok (Public Access)
+```bash
+ngrok http 3001
+```
+
+## 🛠️ Tech Stack
+
+- **Backend**: Node.js, Express
+- **Frontend**: Vanilla JavaScript
+- **Downloader**: yt-dlp
+- **Video Processing**: FFmpeg
+- **Hosting**: Firebase, Docker
+
+## 📝 Notes
+
+- YouTube downloads require valid cookies due to bot detection
+- TikTok works without authentication
+- Instagram/Facebook need cookies for private content
+- Free tier limitations apply to some platforms
+
+## 🤝 Contributing
+
+Contributions are welcome! Please open an issue or submit a PR.
+
+## 📄 License
+
+MIT License
+
+---
+
+Made with ❤️ by VITROAPPS

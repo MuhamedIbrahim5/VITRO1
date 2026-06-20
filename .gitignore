@@ -1,9 +1,29 @@
 node_modules/
-downloads/
+downloads/*.mp4
+downloads/*.webm
 *.log
 .env
+.env.*
 .DS_Store
+
+# Cookies files
 cookies.txt
 www.facebook.com_cookies.txt
-# Allow youtube_cookies.txt
-!youtube_cookies.txt
+youtube_cookies.txt
+
+# Deployment configs (unused)
+.deploy-trigger
+render.yaml
+railway.json
+railway.toml
+fly.toml
+.koyeb/
+
+# Batch files
+*.bat
+
+# Temp files
+*.tmp
+*.temp
+New Text Document.txt
+
